@@ -1,6 +1,7 @@
 import { API_URL } from "./constants";
+import type { MenuItem, ParsedOrder } from "@/types/order";
 
-export async function getMenu() {
+export async function getMenu(): Promise<MenuItem[]> {
   const response = await fetch(`${API_URL}/menu`);
 
   if (!response.ok) {
@@ -10,7 +11,7 @@ export async function getMenu() {
   return response.json();
 }
 
-export async function parseOrder(order: string) {
+export async function parseOrder(order: string): Promise<ParsedOrder> {
   const response = await fetch(`${API_URL}/order/parse`, {
     method: "POST",
     headers: {
