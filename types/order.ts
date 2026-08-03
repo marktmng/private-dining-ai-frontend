@@ -1,4 +1,11 @@
+export interface ParsedOrder {
+  success: boolean;
+  result: string;
+}
 
-export default function order() {
-  return 
+export interface MenuItem {
+  id?: number;
+  name: string;
+  description?: string;
+  price: number;
 }
