@@ -4,7 +4,8 @@ export interface ParsedOrder {
 }
 
 export interface MenuItem {
-  id?: number;
+  category?: string;
+  id?: string;
   name: string;
   description?: string;
   price: number;
