@@ -10,6 +10,7 @@ import StatusCard from "@/components/StatusCard";
 import VoiceButton from "@/components/VoiceButton";
 
 import { getMenu } from "@/lib/api";
+import { matchOrderFromTranscript } from "@/lib/orderMatcher";
 import {
   startRealtimeVoiceSession,
   type RealtimeVoiceSession,
@@ -23,27 +24,6 @@ interface TranscriptEntry {
   role: TranscriptUpdate["role"];
   text: string;
 }
-
-const QUANTITY_WORDS: Record<string, number> = {
-  a: 1,
-  an: 1,
-  eight: 8,
-  five: 5,
-  four: 4,
-  nine: 9,
-  one: 1,
-  seven: 7,
-  six: 6,
-  ten: 10,
-  three: 3,
-  two: 2,
-};
-
-const MENU_ALIASES: Record<string, string[]> = {
-  "creme brulee": ["cream brulee"],
-  "soup of the day": ["soup of day", "today's soup"],
-  "wagyu ribeye": ["wagyu rib eye", "your ribeye", "your repay"],
-};
 
 export default function CustomerPage() {
   const [conversation, setConversation] = useState<TranscriptEntry[]>([]);
@@ -65,21 +45,29 @@ export default function CustomerPage() {
 
   const currentOrder = useMemo(() => {
     return conversation
-      .filter((entry) => entry.role === "user")
+      .filter((entry) => entry.role === "user" && entry.isFinal)
       .map((entry) => entry.text.trim())
       .filter(Boolean)
       .join("\n");
   }, [conversation]);
 
-  const orderTotal = useMemo(() => {
-    return calculateOrderTotal(currentOrder, menu);
+  const orderMatch = useMemo(() => {
+    return matchOrderFromTranscript(currentOrder, menu);
   }, [currentOrder, menu]);
+
+  const displayStatus =
+    orderMatch.needsConfirmation.length > 0
+      ? "Please confirm the highlighted menu item."
+      : orderMatch.spokenTotal || status;
 
   const conversationText = useMemo(() => {
     return conversation
       .map((entry) => {
         const label = entry.role === "user" ? "You" : "AI";
-        const text = entry.text.trim();
+        const text =
+          entry.role === "assistant"
+            ? normalizeAssistantText(entry.text)
+            : entry.text.trim();
         if (!text) return "";
 
         return `${label}: ${text}`;
@@ -211,11 +199,17 @@ export default function CustomerPage() {
               onToggleListening={toggleListening}
             />
 
-            <OrderSummary order={currentOrder} total={orderTotal} />
+            <OrderSummary
+              items={orderMatch.items}
+              needsConfirmation={orderMatch.needsConfirmation}
+              order={currentOrder}
+              spokenTotal={orderMatch.spokenTotal}
+              total={orderMatch.total}
+            />
 
             <Conversation response={conversationText} />
 
-            <StatusCard status={status} />
+            <StatusCard status={displayStatus} />
           </div>
 
           <aside className="bg-slate-900 rounded-2xl p-6 lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
@@ -249,66 +243,13 @@ export default function CustomerPage() {
   );
 }
 
-function calculateOrderTotal(order: string, menu: MenuItemType[]): number {
-  const normalizedOrder = normalizeText(order);
+function normalizeAssistantText(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
 
-  return menu.reduce((total, item) => {
-    const itemNames = getSearchableItemNames(item.name);
-    let itemQuantity = 0;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return "I've updated the order list.";
+  }
 
-    itemNames.forEach((name) => {
-      const itemPattern = buildMenuNamePattern(name);
-      const matcher = new RegExp(
-        `(?:^|\\b)(?:(${quantityPattern()})\\s+)?${itemPattern}\\b`,
-        "g"
-      );
-
-      for (const match of normalizedOrder.matchAll(matcher)) {
-        itemQuantity += readQuantity(match[1]);
-      }
-    });
-
-    return total + itemQuantity * item.price;
-  }, 0);
-}
-
-function buildMenuNamePattern(name: string): string {
-  const words = normalizeText(name).split(/\s+/).map(escapeRegExp);
-  const lastWord = words.pop();
-
-  if (!lastWord) return "";
-
-  return [...words, `${lastWord}s?`].join("\\s+");
-}
-
-function quantityPattern(): string {
-  return `\\d+|${Object.keys(QUANTITY_WORDS).join("|")}`;
-}
-
-function readQuantity(value: string): number {
-  if (!value) return 1;
-
-  const numericQuantity = Number.parseInt(value, 10);
-  if (Number.isFinite(numericQuantity)) return numericQuantity;
-
-  return QUANTITY_WORDS[value] ?? 1;
-}
-
-function getSearchableItemNames(name: string): string[] {
-  const normalizedName = normalizeText(name);
-  return [normalizedName, ...(MENU_ALIASES[normalizedName] ?? [])];
-}
-
-function normalizeText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return trimmed;
 }
