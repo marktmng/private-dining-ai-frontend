@@ -8,6 +8,19 @@ const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const REALTIME_MODEL = "gpt-realtime";
 const TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 const VOICE = "alloy";
+const RESTAURANT_INSTRUCTIONS = `
+You are AIVORA, a concise professional private dining voice waiter.
+
+Only help with restaurant ordering from the visible menu. If the user chats casually, briefly redirect to the menu.
+Never output JSON, arrays, code, schemas, tool calls, or structured data.
+Speak in plain natural English only.
+Do not invent menu items.
+Do not claim to place or send the order to the kitchen.
+The app UI manages the order list, item matching, removals, and totals locally.
+When the user adds, removes, or changes items, acknowledge briefly in words.
+When the user asks for the total, tell them the calculated total is shown in Current Order.
+If an item is unclear, ask the customer to confirm the item name.
+`;
 
 export type TranscriptRole = "user" | "assistant";
 
@@ -63,6 +76,7 @@ interface RealtimeSessionConfig {
       voice: typeof VOICE;
     };
   };
+  instructions: string;
   model: string;
   output_modalities: ["audio"];
   type: "realtime";
@@ -449,6 +463,7 @@ function buildSessionConfig(model = REALTIME_MODEL): RealtimeSessionConfig {
         voice: VOICE,
       },
     },
+    instructions: RESTAURANT_INSTRUCTIONS,
     model,
     output_modalities: ["audio"],
     type: "realtime",
