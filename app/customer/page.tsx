@@ -4,19 +4,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Conversation from "@/components/Conversation";
 import Header from "@/components/Header";
+import LoginModal from "@/components/LoginModal";
 import MenuItem from "@/components/MenuItem";
 import OrderSummary from "@/components/OrderSummary";
 import StatusCard from "@/components/StatusCard";
 import VoiceButton from "@/components/VoiceButton";
 
-import { getMenu } from "@/lib/api";
+import { getMe, getMenu, submitOrder } from "@/lib/api";
 import { matchOrderFromTranscript } from "@/lib/orderMatcher";
 import {
   startRealtimeVoiceSession,
   type RealtimeVoiceSession,
   type TranscriptUpdate,
 } from "@/lib/realtime";
-import type { MenuItem as MenuItemType } from "@/types/order";
+import type {
+  AuthUser,
+  CreateOrderPayload,
+  MenuItem as MenuItemType,
+  PersistedOrder,
+} from "@/types/order";
+
+const TOKEN_STORAGE_KEY = "aivora_auth_token";
 
 interface TranscriptEntry {
   id: string;
@@ -26,14 +34,105 @@ interface TranscriptEntry {
 }
 
 export default function CustomerPage() {
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [restaurantName, setRestaurantName] = useState<string>("Restaurant A");
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
   const [conversation, setConversation] = useState<TranscriptEntry[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+
   const [menu, setMenu] = useState<MenuItemType[]>([]);
   const [menuError, setMenuError] = useState("");
   const [status, setStatus] = useState("Waiting for customer...");
+
+  // Order submission and persistence state
+  const [specialInstructions, setSpecialInstructions] = useState("");
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [submitOrderError, setSubmitOrderError] = useState<string | null>(null);
+  const [persistedOrder, setPersistedOrder] = useState<PersistedOrder | null>(null);
+
   const sessionRef = useRef<RealtimeVoiceSession | null>(null);
+
+  // 1. Check existing saved token on client mount
+  useEffect(() => {
+    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!savedToken) return;
+
+    setAuthToken(savedToken);
+    getMe(savedToken)
+      .then((data) => {
+        setCurrentUser({
+          userId: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          restaurantId: data.restaurant?.id || "",
+          restaurantName: data.restaurant?.name || "Restaurant A",
+          role: data.role,
+        });
+        if (data.restaurant?.name) {
+          setRestaurantName(data.restaurant.name);
+        }
+      })
+      .catch((err) => {
+        console.warn("Stored token is invalid or expired:", err.message);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        setAuthToken(null);
+        setCurrentUser(null);
+      });
+  }, []);
+
+  // 2. Load restaurant menu whenever authToken changes
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadMenu() {
+      try {
+        setMenuError("");
+        const items = await getMenu(authToken ?? undefined);
+        if (!isCancelled) {
+          setMenu(items);
+          setMenuError("");
+        }
+      } catch (error) {
+        console.error(error);
+        if (!isCancelled) {
+          setMenuError("Menu is unavailable right now.");
+        }
+      }
+    }
+
+    void loadMenu();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [authToken]);
+
+  // Handle successful login
+  const handleLoginSuccess = useCallback((token: string, user: AuthUser) => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    setAuthToken(token);
+    setCurrentUser(user);
+    if (user.restaurantName) {
+      setRestaurantName(user.restaurantName);
+    }
+    setPersistedOrder(null);
+    setConversation([]);
+    setStatus(`Connected to ${user.restaurantName || "Restaurant A"}`);
+  }, []);
+
+  // Handle logout (switch to unauthenticated prototype)
+  const handleSignOut = useCallback(() => {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    setAuthToken(null);
+    setCurrentUser(null);
+    setPersistedOrder(null);
+    setConversation([]);
+    setStatus("Switched to prototype mode.");
+  }, []);
 
   const groupedMenu = useMemo(() => {
     return menu.reduce<Record<string, MenuItemType[]>>((groups, item) => {
@@ -102,12 +201,18 @@ export default function CustomerPage() {
   }, []);
 
   const startListening = useCallback(async () => {
+    // If there was an earlier persisted order, clear it for new order
+    if (persistedOrder) {
+      setPersistedOrder(null);
+    }
+
     setConversation([]);
     setIsConnecting(true);
     setStatus("Requesting microphone...");
 
     try {
       const session = await startRealtimeVoiceSession({
+        authToken: authToken ?? undefined,
         onAssistantSpeakingChange: setIsSpeaking,
         onDisconnected: () => {
           sessionRef.current = null;
@@ -142,7 +247,7 @@ export default function CustomerPage() {
           : "Unable to start voice session."
       );
     }
-  }, [upsertTranscript]);
+  }, [authToken, persistedOrder, upsertTranscript]);
 
   const toggleListening = useCallback(() => {
     if (sessionRef.current) {
@@ -153,29 +258,60 @@ export default function CustomerPage() {
     void startListening();
   }, [startListening, stopListening]);
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function loadMenu() {
-      try {
-        const items = await getMenu();
-        if (!isCancelled) {
-          setMenu(items);
-          setMenuError("");
-        }
-      } catch (error) {
-        console.error(error);
-        if (!isCancelled) {
-          setMenuError("Menu is unavailable right now.");
-        }
-      }
+  // Order Submission Handler
+  const handleSubmitConfirmedOrder = useCallback(async () => {
+    if (!authToken) {
+      setSubmitOrderError("Please sign in as Restaurant A to submit orders.");
+      return;
     }
 
-    void loadMenu();
+    if (orderMatch.items.length === 0) {
+      setSubmitOrderError("No menu items to order.");
+      return;
+    }
 
-    return () => {
-      isCancelled = true;
-    };
+    // Verify all items have database IDs
+    const missingIds = orderMatch.items.filter((i) => !i.id);
+    if (missingIds.length > 0) {
+      setSubmitOrderError("Some items do not have valid database IDs.");
+      return;
+    }
+
+    setIsSubmittingOrder(true);
+    setSubmitOrderError(null);
+
+    try {
+      const payload: CreateOrderPayload = {
+        specialInstructions: specialInstructions.trim() || undefined,
+        items: orderMatch.items.map((item) => ({
+          menuItemId: item.id,
+          quantity: item.quantity,
+          notes: item.notes || undefined,
+        })),
+      };
+
+      const result = await submitOrder(payload, authToken);
+      setPersistedOrder(result);
+      setStatus(`Order #${result.id.slice(0, 8)} sent to kitchen! Total: $${Number(result.total).toFixed(2)}`);
+
+      // Optionally stop active voice session
+      if (sessionRef.current) {
+        stopListening();
+      }
+    } catch (err: any) {
+      console.error("Order submission failed:", err);
+      setSubmitOrderError(err.message || "Failed to submit order to the kitchen.");
+    } finally {
+      setIsSubmittingOrder(false);
+    }
+  }, [authToken, orderMatch.items, specialInstructions, stopListening]);
+
+  const handleResetOrder = useCallback(() => {
+    setPersistedOrder(null);
+    setConversation([]);
+    setSpecialInstructions("");
+    setSubmitOrderError(null);
+    setStatus("Ready for next order.");
   }, []);
 
   useEffect(() => {
@@ -186,10 +322,15 @@ export default function CustomerPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-white flex justify-center">
-      <div className="w-full max-w-6xl p-8 space-y-8">
-        <Header />
+      <div className="w-full max-w-6xl p-6 sm:p-8 space-y-8">
+        <Header
+          user={currentUser}
+          restaurantName={restaurantName}
+          onOpenLogin={() => setIsLoginModalOpen(true)}
+          onSignOut={handleSignOut}
+        />
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
           <div className="space-y-8">
             <VoiceButton
               disabled={isConnecting}
@@ -205,6 +346,14 @@ export default function CustomerPage() {
               order={currentOrder}
               spokenTotal={orderMatch.spokenTotal}
               total={orderMatch.total}
+              isAuthenticated={!!authToken}
+              isSubmitting={isSubmittingOrder}
+              submitError={submitOrderError}
+              onSubmitOrder={handleSubmitConfirmedOrder}
+              persistedOrder={persistedOrder}
+              onResetOrder={handleResetOrder}
+              specialInstructions={specialInstructions}
+              onSpecialInstructionsChange={setSpecialInstructions}
             />
 
             <Conversation response={conversationText} />
@@ -212,22 +361,29 @@ export default function CustomerPage() {
             <StatusCard status={displayStatus} />
           </div>
 
-          <aside className="bg-slate-900 rounded-2xl p-6 lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
-            <h2 className="text-2xl font-bold mb-4">Menu</h2>
+          <aside className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-xl lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white">
+                {authToken ? "Active Database Menu" : "Prototype Menu"}
+              </h2>
+              <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                {menu.length} items
+              </span>
+            </div>
 
             {menuError ? (
-              <p className="text-slate-400">{menuError}</p>
+              <p className="text-red-400 text-sm">{menuError}</p>
             ) : menu.length === 0 ? (
-              <p className="text-slate-400">Loading menu...</p>
+              <p className="text-slate-400 text-sm">Loading menu...</p>
             ) : (
               <div className="space-y-6">
                 {Object.entries(groupedMenu).map(([category, items]) => (
                   <section key={category}>
-                    <h3 className="text-sm font-bold uppercase tracking-wide text-blue-300">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-blue-400 mb-1">
                       {category}
                     </h3>
 
-                    <div className="mt-1">
+                    <div className="divide-y divide-slate-800/60">
                       {items.map((item) => (
                         <MenuItem key={item.id ?? item.name} item={item} />
                       ))}
@@ -239,6 +395,12 @@ export default function CustomerPage() {
           </aside>
         </div>
       </div>
+
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={handleLoginSuccess}
+      />
     </main>
   );
 }
