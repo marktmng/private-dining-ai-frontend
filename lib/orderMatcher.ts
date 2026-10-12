@@ -42,16 +42,21 @@ const QUANTITY_WORDS: Record<string, number> = {
 const MENU_ALIASES: Record<string, string[]> = {
   "beef carpaccio": ["beef capaccio", "carpaccio"],
   "burrata salad": ["buratta salad", "barata salad", "burrata"],
+  "caesar salad": ["caesar", "cesar salad", "caesar salad"],
   cheesecake: ["cheese cake"],
   "chocolate fondant": ["chocolate fondant", "fondant"],
   "creme brulee": ["cream brulee", "creme brule"],
   "espresso martini": ["expresso martini", "espresso"],
   "eye fillet": ["eye filet", "eye fill it", "ifile"],
+  "flat white": ["flat white", "coffee", "white coffee"],
+  "french fries": ["fries", "french fries", "french fry", "chips"],
   "herb crusted lamb rack": ["lamb rack", "herb lamb rack"],
   "market fish": ["market fresh", "fresh fish", "fish"],
   "old fashioned": ["old fashion"],
+  "pan-seared salmon": ["pan seared salmon", "salmon fillet", "seared salmon", "salmon"],
   "soup of the day": ["soup of day", "today soup", "today's soup", "soup"],
   "sparkling water": ["mineral water", "sparkling", "water"],
+  "truffle mushroom risotto": ["truffle risotto", "mushroom risotto", "truffle mushroom risotto", "risotto"],
   "wagyu ribeye": [
     "wagyu rib eye",
     "wag you ribeye",
@@ -81,6 +86,7 @@ export interface MatchedOrderItem {
   price: number;
   quantity: number;
   status: "matched" | "needs_confirmation";
+  notes?: string;
 }
 
 export interface OrderMatchResult {

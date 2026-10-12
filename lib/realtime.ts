@@ -32,6 +32,7 @@ export interface TranscriptUpdate {
 }
 
 export interface RealtimeVoiceCallbacks {
+  authToken?: string;
   onAssistantSpeakingChange?: (isSpeaking: boolean) => void;
   onDisconnected?: () => void;
   onError?: (message: string) => void;
@@ -76,7 +77,7 @@ interface RealtimeSessionConfig {
       voice: typeof VOICE;
     };
   };
-  instructions: string;
+  instructions?: string;
   model: string;
   output_modalities: ["audio"];
   type: "realtime";
@@ -363,7 +364,7 @@ export async function startRealtimeVoiceSession(
 
     callbacks.onStatusChange?.("Connecting to AI waiter...");
 
-    const token = await fetchRealtimeToken();
+    const token = await fetchRealtimeToken(callbacks.authToken);
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
@@ -389,12 +390,18 @@ export async function startRealtimeVoiceSession(
   }
 }
 
-async function fetchRealtimeToken(): Promise<{
+async function fetchRealtimeToken(authToken?: string): Promise<{
   model?: string;
   token: string;
 }> {
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
   const response = await fetch(`${API_URL}/realtime/token`, {
     cache: "no-store",
+    headers,
   });
 
   const body = (await response.json().catch(() => null)) as TokenResponse | null;
@@ -463,7 +470,6 @@ function buildSessionConfig(model = REALTIME_MODEL): RealtimeSessionConfig {
         voice: VOICE,
       },
     },
-    instructions: RESTAURANT_INSTRUCTIONS,
     model,
     output_modalities: ["audio"],
     type: "realtime",
