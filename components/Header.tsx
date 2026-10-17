@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { AuthUser } from "@/types/order";
 
 interface Props {
@@ -28,6 +29,27 @@ export default function Header({
         </div>
 
         <div className="flex items-center gap-3">
+          <nav className="flex items-center bg-slate-900/90 border border-slate-800 rounded-full p-1 text-xs font-medium">
+            <Link
+              href="/customer"
+              className="px-3 py-1 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              🎙️ Order
+            </Link>
+            <Link
+              href="/kitchen"
+              className="px-3 py-1 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              🍳 Kitchen
+            </Link>
+            <Link
+              href="/admin"
+              className="px-3 py-1 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              📊 Manager
+            </Link>
+          </nav>
+
           {isAuthenticated ? (
             <div className="flex items-center gap-3 bg-slate-900 border border-emerald-500/30 rounded-full px-4 py-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />

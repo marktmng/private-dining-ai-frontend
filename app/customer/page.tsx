@@ -10,7 +10,7 @@ import OrderSummary from "@/components/OrderSummary";
 import StatusCard from "@/components/StatusCard";
 import VoiceButton from "@/components/VoiceButton";
 
-import { getMe, getMenu, submitOrder } from "@/lib/api";
+import { getMe, getMenu, getOrderById, submitOrder, updateOrderStatus } from "@/lib/api";
 import { matchOrderFromTranscript } from "@/lib/orderMatcher";
 import {
   startRealtimeVoiceSession,
@@ -61,9 +61,9 @@ export default function CustomerPage() {
     const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!savedToken) return;
 
-    setAuthToken(savedToken);
     getMe(savedToken)
       .then((data) => {
+        setAuthToken(savedToken);
         setCurrentUser({
           userId: data.user.id,
           email: data.user.email,
@@ -76,8 +76,9 @@ export default function CustomerPage() {
           setRestaurantName(data.restaurant.name);
         }
       })
-      .catch((err) => {
-        console.warn("Stored token is invalid or expired:", err.message);
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : "Invalid session";
+        console.warn("Stored token is invalid or expired:", msg);
         localStorage.removeItem(TOKEN_STORAGE_KEY);
         setAuthToken(null);
         setCurrentUser(null);
@@ -261,7 +262,7 @@ export default function CustomerPage() {
   // Order Submission Handler
   const handleSubmitConfirmedOrder = useCallback(async () => {
     if (!authToken) {
-      setSubmitOrderError("Please sign in as Restaurant A to submit orders.");
+      setSubmitOrderError("Please sign in as Restaurant A to submit orders to the database.");
       return;
     }
 
@@ -281,7 +282,9 @@ export default function CustomerPage() {
     setSubmitOrderError(null);
 
     try {
+      const idempotencyKey = `ord-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const payload: CreateOrderPayload = {
+        idempotencyKey,
         specialInstructions: specialInstructions.trim() || undefined,
         items: orderMatch.items.map((item) => ({
           menuItemId: item.id,
@@ -290,17 +293,31 @@ export default function CustomerPage() {
         })),
       };
 
-      const result = await submitOrder(payload, authToken);
-      setPersistedOrder(result);
-      setStatus(`Order #${result.id.slice(0, 8)} sent to kitchen! Total: $${Number(result.total).toFixed(2)}`);
+      const created = await submitOrder(payload, authToken);
 
-      // Optionally stop active voice session
+      // Transition to CONFIRMED, then SENT_TO_KITCHEN
+      let finalOrder = created;
+      try {
+        await updateOrderStatus(created.id, "CONFIRMED", authToken);
+        finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken);
+      } catch (transErr) {
+        console.warn("Notice transitioning status to kitchen:", transErr);
+      }
+
+      setPersistedOrder(finalOrder);
+      setStatus(
+        `Order #${finalOrder.id.slice(0, 8)} confirmed and sent to kitchen! Total: $${Number(finalOrder.total).toFixed(2)}`
+      );
+
+      // Stop active voice session upon placement
       if (sessionRef.current) {
         stopListening();
       }
-    } catch (err: any) {
-      console.error("Order submission failed:", err);
-      setSubmitOrderError(err.message || "Failed to submit order to the kitchen.");
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to submit order to the kitchen.";
+      console.error("Order submission failed:", errorMsg);
+      setSubmitOrderError(errorMsg);
     } finally {
       setIsSubmittingOrder(false);
     }
@@ -313,6 +330,38 @@ export default function CustomerPage() {
     setSubmitOrderError(null);
     setStatus("Ready for next order.");
   }, []);
+
+  // Poll live order status until completed or cancelled
+  useEffect(() => {
+    if (!persistedOrder || !authToken) return;
+    if (persistedOrder.status === "COMPLETED" || persistedOrder.status === "CANCELLED") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const latest = await getOrderById(persistedOrder.id, authToken);
+        if (latest && latest.status !== persistedOrder.status) {
+          setPersistedOrder(latest);
+          if (latest.status === "PREPARING") {
+            setStatus(`Order #${latest.id.slice(0, 8)} is now being prepared by the chef!`);
+          } else if (latest.status === "READY") {
+            setStatus(`Order #${latest.id.slice(0, 8)} is READY for service!`);
+          } else if (latest.status === "COMPLETED") {
+            setStatus(`Order #${latest.id.slice(0, 8)} has been completed!`);
+          } else if (latest.status === "CANCELLED") {
+            setStatus(
+              `Order #${latest.id.slice(0, 8)} was cancelled: ${
+                latest.specialInstructions || "No reason specified"
+              }`
+            );
+          }
+        }
+      } catch (e) {
+        console.warn("Status polling error:", e);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [persistedOrder, authToken]);
 
   useEffect(() => {
     return () => {

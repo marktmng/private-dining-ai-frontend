@@ -1,8 +1,10 @@
 import { API_URL } from "./constants";
 import type {
   AuthUser,
+  CreateMenuItemPayload,
   CreateOrderPayload,
   MenuItem,
+  MenuWithItems,
   ParsedOrder,
   PersistedOrder,
 } from "@/types/order";
@@ -96,7 +98,7 @@ export async function getMenu(token?: string): Promise<MenuItem[]> {
     return [];
   }
 
-  let data: any;
+  let data: unknown;
   try {
     data = JSON.parse(text);
   } catch {
@@ -104,8 +106,8 @@ export async function getMenu(token?: string): Promise<MenuItem[]> {
   }
 
   // Authenticated response format: { success: true, data: Menu[] }
-  if (data && typeof data === "object" && "data" in data && Array.isArray(data.data)) {
-    const menus = data.data as Array<{
+  if (data && typeof data === "object" && "data" in data && Array.isArray((data as { data: unknown }).data)) {
+    const menus = (data as { data: unknown }).data as Array<{
       id: string;
       name: string;
       active: boolean;
@@ -147,9 +149,13 @@ export async function getMenu(token?: string): Promise<MenuItem[]> {
 
   // Legacy prototype menu response format: MenuItem[]
   if (Array.isArray(data)) {
-    return data.map((item: any) => ({
-      ...item,
-      price: Number(item.price),
+    return (data as Array<Record<string, unknown>>).map((item) => ({
+      id: (item.id as string) || undefined,
+      name: (item.name as string) || "",
+      category: item.category as string | undefined,
+      description: item.description as string | undefined,
+      price: Number(item.price) || 0,
+      active: item.active !== false,
     }));
   }
 
@@ -225,3 +231,143 @@ export async function parseOrder(order: string, token?: string): Promise<ParsedO
 
   return response.json();
 }
+
+/**
+ * Update the status of an existing order (e.g. kitchen or manager action).
+ */
+export async function updateOrderStatus(
+  orderId: string,
+  status: string,
+  token: string,
+  reason?: string
+): Promise<PersistedOrder> {
+  const response = await fetch(`${API_URL}/order/${orderId}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ status, reason }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to update order status.");
+  }
+
+  return data.data as PersistedOrder;
+}
+
+/**
+ * Fetch a single order by ID with tenant verification.
+ */
+export async function getOrderById(
+  orderId: string,
+  token: string
+): Promise<PersistedOrder> {
+  const response = await fetch(`${API_URL}/order/${orderId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Order not found.");
+  }
+
+  return data.data as PersistedOrder;
+}
+
+/**
+ * Fetch complete menus for the authenticated restaurant (used in Manager Dashboard).
+ */
+export async function getFullMenus(token: string): Promise<MenuWithItems[]> {
+  const response = await fetch(`${API_URL}/menu`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to load menus.");
+  }
+
+  return (data.data || []) as MenuWithItems[];
+}
+
+/**
+ * Create a new menu item in a menu (Manager role).
+ */
+export async function createMenuItem(
+  menuId: string,
+  payload: CreateMenuItemPayload,
+  token: string
+): Promise<MenuItem> {
+  const response = await fetch(`${API_URL}/menu/${menuId}/items`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to create menu item.");
+  }
+
+  return data.data as MenuItem;
+}
+
+/**
+ * Update an existing menu item (Manager role).
+ */
+export async function updateMenuItem(
+  menuId: string,
+  itemId: string,
+  payload: Partial<CreateMenuItemPayload>,
+  token: string
+): Promise<MenuItem> {
+  const response = await fetch(`${API_URL}/menu/${menuId}/items/${itemId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to update menu item.");
+  }
+
+  return data.data as MenuItem;
+}
+
+/**
+ * Delete a menu item (Manager role).
+ */
+export async function deleteMenuItem(
+  menuId: string,
+  itemId: string,
+  token: string
+): Promise<void> {
+  const response = await fetch(`${API_URL}/menu/${menuId}/items/${itemId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to delete menu item.");
+  }
+}
+

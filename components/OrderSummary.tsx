@@ -162,7 +162,7 @@ export default function OrderSummary({
               <div className="mt-3 space-y-2">
                 {needsConfirmation.map((item) => (
                   <p className="text-sm text-amber-100" key={item.id}>
-                    Did you mean {item.quantity} x {item.name}? Heard "{item.matchedText}" with{" "}
+                    Did you mean {item.quantity} x {item.name}? Heard &ldquo;{item.matchedText}&rdquo; with{" "}
                     {Math.round(item.confidence * 100)}% confidence.
                   </p>
                 ))}

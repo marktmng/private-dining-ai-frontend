@@ -62,3 +62,21 @@ export interface PersistedOrder {
   table?: { id: string; name: string } | null;
   room?: { id: string; name: string } | null;
 }
+
+export interface MenuWithItems {
+  id: string;
+  restaurantId: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+  items: MenuItem[];
+}
+
+export interface CreateMenuItemPayload {
+  name: string;
+  category: string;
+  price: number;
+  description?: string;
+  active?: boolean;
+}
+

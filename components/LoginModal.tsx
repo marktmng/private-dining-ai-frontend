@@ -27,8 +27,12 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
       const result = await login(email.trim(), password);
       onSuccess(result.token, result.data);
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to sign in. Please verify your credentials.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to sign in. Please verify your credentials."
+      );
     } finally {
       setIsLoading(false);
     }

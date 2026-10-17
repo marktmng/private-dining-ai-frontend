@@ -1,82 +1,5 @@
 import type { MenuItem } from "@/types/order";
 
-const MATCH_THRESHOLD = 0.62;
-const CONFIRM_THRESHOLD = 0.78;
-const ORDER_INTENT_WORDS = [
-  "add",
-  "another",
-  "can",
-  "change",
-  "delete",
-  "get",
-  "have",
-  "like",
-  "make",
-  "order",
-  "remove",
-  "set",
-  "take",
-  "want",
-];
-
-const QUANTITY_WORDS: Record<string, number> = {
-  a: 1,
-  an: 1,
-  both: 2,
-  couple: 2,
-  dozen: 12,
-  eight: 8,
-  eleven: 11,
-  five: 5,
-  four: 4,
-  nine: 9,
-  one: 1,
-  seven: 7,
-  six: 6,
-  ten: 10,
-  three: 3,
-  twelve: 12,
-  two: 2,
-};
-
-const MENU_ALIASES: Record<string, string[]> = {
-  "beef carpaccio": ["beef capaccio", "carpaccio"],
-  "burrata salad": ["buratta salad", "barata salad", "burrata"],
-  "caesar salad": ["caesar", "cesar salad", "caesar salad"],
-  cheesecake: ["cheese cake"],
-  "chocolate fondant": ["chocolate fondant", "fondant"],
-  "creme brulee": ["cream brulee", "creme brule"],
-  "espresso martini": ["expresso martini", "espresso"],
-  "eye fillet": ["eye filet", "eye fill it", "ifile"],
-  "flat white": ["flat white", "coffee", "white coffee"],
-  "french fries": ["fries", "french fries", "french fry", "chips"],
-  "herb crusted lamb rack": ["lamb rack", "herb lamb rack"],
-  "market fish": ["market fresh", "fresh fish", "fish"],
-  "old fashioned": ["old fashion"],
-  "pan-seared salmon": ["pan seared salmon", "salmon fillet", "seared salmon", "salmon"],
-  "soup of the day": ["soup of day", "today soup", "today's soup", "soup"],
-  "sparkling water": ["mineral water", "sparkling", "water"],
-  "truffle mushroom risotto": ["truffle risotto", "mushroom risotto", "truffle mushroom risotto", "risotto"],
-  "wagyu ribeye": [
-    "wagyu rib eye",
-    "wag you ribeye",
-    "wag you rib eye",
-    "your repay",
-    "your ribeye",
-  ],
-  "wild mushroom risotto": ["mushroom risotto", "risotto"],
-};
-
-interface Candidate {
-  confidence: number;
-  end: number;
-  item: MenuItem;
-  matchedText: string;
-  operation: "add" | "remove" | "set";
-  quantity: number;
-  start: number;
-}
-
 export interface MatchedOrderItem {
   confidence: number;
   id: string;
@@ -87,6 +10,7 @@ export interface MatchedOrderItem {
   quantity: number;
   status: "matched" | "needs_confirmation";
   notes?: string;
+  candidates?: Array<{ id: string; name: string; price: number }>;
 }
 
 export interface OrderMatchResult {
@@ -96,311 +20,60 @@ export interface OrderMatchResult {
   total: number;
 }
 
-interface Variant {
-  text: string;
-  weight: number;
-}
+const QUANTITY_WORDS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  single: 1,
+  two: 2,
+  both: 2,
+  couple: 2,
+  pair: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  dozen: 12,
+};
 
-export function matchOrderFromTranscript(
-  transcript: string,
-  menu: MenuItem[]
-): OrderMatchResult {
-  const tokens = tokenize(stripClearedHistory(transcript));
-  const maxWindow = Math.max(
-    2,
-    ...menu.map((item) => normalizeText(item.name).split(" ").length + 2)
-  );
-  const candidates: Candidate[] = [];
+// Known common aliases / colloquial names for menu items
+const MENU_ALIASES: Record<string, string[]> = {
+  "wagyu ribeye": ["wagyu rib eye", "wagyu steak", "wagyu", "ribeye", "rib eye"],
+  "eye fillet": ["eye filet", "beef fillet", "beef tenderloin"],
+  "pan-seared salmon": ["pan seared salmon", "salmon fillet", "seared salmon", "salmon", "king salmon"],
+  "truffle mushroom risotto": ["truffle risotto", "mushroom risotto", "truffle mushroom risotto"],
+  "wild mushroom risotto": ["mushroom risotto", "wild risotto"],
+  "beef carpaccio": ["beef capaccio", "carpaccio"],
+  "caesar salad": ["caesar", "cesar salad", "caesar salad"],
+  "burrata salad": ["buratta salad", "burrata"],
+  "french fries": ["fries", "chips", "french fry"],
+  "chocolate fondant": ["fondant", "molten chocolate", "chocolate cake"],
+  "creme brulee": ["cream brulee", "creme brule", "crème brûlée"],
+  "flat white": ["white coffee", "flat white coffee", "coffee"],
+  "sparkling water": ["mineral water", "sparkling mineral water", "sparkling bottle"],
+  "espresso martini": ["espresso cocktail"],
+  "old fashioned": ["old fashion"],
+  "soup of the day": ["today's soup", "daily soup"],
+};
 
-  for (let start = 0; start < tokens.length; start += 1) {
-    for (let size = 1; size <= maxWindow && start + size <= tokens.length; size += 1) {
-      const windowTokens = tokens.slice(start, start + size);
-      const { phraseTokens, quantity } = stripLeadingQuantity(windowTokens);
-      if (phraseTokens.length === 0) continue;
+// Ambiguous words that appear in multiple menu items and require clarification
+const AMBIGUOUS_KEYWORDS: Record<string, string[]> = {
+  fillet: ["Eye Fillet", "Market Fish Fillet", "Pan-Seared Salmon"],
+  filet: ["Eye Fillet", "Market Fish Fillet", "Pan-Seared Salmon"],
+  steak: ["Wagyu Ribeye", "Eye Fillet"],
+  salad: ["Caesar Salad", "Burrata Salad"],
+  risotto: ["Truffle Mushroom Risotto", "Wild Mushroom Risotto"],
+  water: ["Sparkling Water", "Tap Water", "Still Water"],
+};
 
-      const phrase = phraseTokens.join(" ");
-      const match = findBestMenuMatch(phrase, menu);
-      if (!match || match.confidence < MATCH_THRESHOLD) continue;
-      if (!shouldAcceptCandidate(tokens, start, start + size - 1, match.confidence)) {
-        continue;
-      }
-
-      candidates.push({
-        confidence: match.confidence,
-        end: start + size - 1,
-        item: match.item,
-        matchedText: phrase,
-        operation: detectOperation(tokens, start),
-        quantity:
-          quantity ??
-          readPreviousQuantity(tokens, start) ??
-          readFollowingQuantity(tokens, start + size - 1) ??
-          1,
-        start,
-      });
-    }
-  }
-
-  const selected = selectNonOverlapping(candidates);
-  const merged = buildOrderItems(selected);
-  const items = merged.filter(
-    (item) => item.status === "matched" && item.quantity > 0
-  );
-  const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
-
-  return {
-    items,
-    needsConfirmation: merged.filter(
-      (item) => item.status === "needs_confirmation"
-    ),
-    spokenTotal:
-      total > 0
-        ? `This is the total after calculating: $${total.toFixed(2)}.`
-        : "",
-    total,
-  };
-}
-
-function findBestMenuMatch(
-  phrase: string,
-  menu: MenuItem[]
-): { confidence: number; item: MenuItem } | null {
-  let best: { confidence: number; item: MenuItem } | null = null;
-
-  menu.forEach((item) => {
-    const confidence = Math.max(
-      ...getItemVariants(item.name).map((variant) =>
-        scorePhraseAgainstVariant(phrase, variant)
-      )
-    );
-
-    if (!best || confidence > best.confidence) {
-      best = { confidence, item };
-    }
-  });
-
-  return best;
-}
-
-function scorePhraseAgainstVariant(phrase: string, variant: Variant): number {
-  if (!phrase || !variant.text) return 0;
-  if (phrase === variant.text) return variant.weight;
-
-  const phraseTokens = phrase.split(" ");
-  const variantTokens = variant.text.split(" ");
-
-  if (phrase.includes(variant.text) || variant.text.includes(phrase)) {
-    const coverage =
-      Math.min(phraseTokens.length, variantTokens.length) /
-      Math.max(phraseTokens.length, variantTokens.length);
-    return (0.68 + coverage * 0.2) * variant.weight;
-  }
-
-  const typoScore = averageBestTokenScore(phraseTokens, variantTokens, levenshteinScore);
-  const phoneticScore = averageBestTokenScore(phraseTokens, variantTokens, phoneticScoreForWords);
-
-  if (phraseTokens.length < variantTokens.length) {
-    return Math.max(typoScore * 0.72, phoneticScore * 0.68) * variant.weight;
-  }
-
-  return Math.max(typoScore * 0.86, phoneticScore * 0.78) * variant.weight;
-}
-
-function getItemVariants(name: string): Variant[] {
-  const normalizedName = normalizeText(name);
-  const words = normalizedName.split(" ");
-  const compactWords = words.filter((word) => !["and", "of", "the"].includes(word));
-  const aliases = MENU_ALIASES[normalizedName] ?? [];
-  const partials = new Set<string>();
-
-  if (compactWords.length > 1) partials.add(compactWords.join(" "));
-  if (words.length > 1) partials.add(words.slice(-2).join(" "));
-  words.forEach((word) => {
-    if (word.length >= 5) partials.add(word);
-  });
-
-  return [
-    { text: normalizedName, weight: 1 },
-    ...aliases.map((alias) => ({ text: normalizeText(alias), weight: 0.9 })),
-    ...Array.from(partials).map((partial) => ({ text: partial, weight: 0.82 })),
-  ];
-}
-
-function selectNonOverlapping(candidates: Candidate[]): Candidate[] {
-  const selected: Candidate[] = [];
-  const sorted = [...candidates].sort((left, right) => {
-    const leftLength = left.end - left.start;
-    const rightLength = right.end - right.start;
-    return right.confidence - left.confidence || rightLength - leftLength;
-  });
-
-  sorted.forEach((candidate) => {
-    const overlaps = selected.some(
-      (item) => candidate.start <= item.end && candidate.end >= item.start
-    );
-    if (!overlaps) selected.push(candidate);
-  });
-
-  return selected.sort((left, right) => left.start - right.start);
-}
-
-function buildOrderItems(candidates: Candidate[]): MatchedOrderItem[] {
-  const byId = new Map<string, MatchedOrderItem>();
-
-  candidates.forEach((candidate) => {
-    const id = candidate.item.id ?? candidate.item.name;
-    const status =
-      candidate.confidence >= CONFIRM_THRESHOLD ? "matched" : "needs_confirmation";
-    const existing = byId.get(`${id}:${status}`);
-    const nextQuantity = calculateNextQuantity(existing?.quantity ?? 0, candidate);
-
-    if (!existing) {
-      if (candidate.operation === "remove") return;
-
-      byId.set(`${id}:${status}`, {
-        confidence: roundConfidence(candidate.confidence),
-        id,
-        lineTotal: status === "matched" ? nextQuantity * candidate.item.price : 0,
-        matchedText: candidate.matchedText,
-        name: candidate.item.name,
-        price: candidate.item.price,
-        quantity: nextQuantity,
-        status,
-      });
-      return;
-    }
-
-    existing.quantity = nextQuantity;
-    existing.confidence = Math.max(existing.confidence, roundConfidence(candidate.confidence));
-    existing.matchedText = `${existing.matchedText}, ${candidate.matchedText}`;
-    existing.lineTotal =
-      existing.status === "matched" ? existing.quantity * existing.price : 0;
-
-    if (existing.quantity <= 0) {
-      byId.delete(`${id}:${status}`);
-    }
-  });
-
-  return Array.from(byId.values());
-}
-
-function calculateNextQuantity(currentQuantity: number, candidate: Candidate): number {
-  if (candidate.operation === "set") {
-    return candidate.quantity;
-  }
-
-  if (candidate.operation === "remove") {
-    return Math.max(0, currentQuantity - candidate.quantity);
-  }
-
-  return currentQuantity + candidate.quantity;
-}
-
-function stripLeadingQuantity(tokens: string[]): {
-  phraseTokens: string[];
-  quantity?: number;
-} {
-  const first = tokens[0];
-  const quantity = first ? readQuantity(first) : undefined;
-
-  if (quantity && tokens.length > 1) {
-    return {
-      phraseTokens: tokens.slice(1),
-      quantity,
-    };
-  }
-
-  return {
-    phraseTokens: tokens,
-  };
-}
-
-function readPreviousQuantity(tokens: string[], start: number): number | undefined {
-  if (start === 0) return undefined;
-
-  const previous = tokens[start - 1];
-  const quantity = readQuantity(previous);
-
-  return quantity || undefined;
-}
-
-function readFollowingQuantity(tokens: string[], end: number): number | undefined {
-  const next = tokens[end + 1];
-  const afterNext = tokens[end + 2];
-
-  return readQuantity(next) ?? (next === "to" ? readQuantity(afterNext) : undefined);
-}
-
-function readQuantity(value: string | undefined): number | undefined {
-  if (!value) return undefined;
-
-  const numericQuantity = Number.parseInt(value, 10);
-  if (Number.isFinite(numericQuantity)) return numericQuantity;
-
-  return QUANTITY_WORDS[value];
-}
-
-function detectOperation(tokens: string[], start: number): Candidate["operation"] {
-  const nearby = tokens.slice(Math.max(0, start - 5), start);
-
-  if (
-    nearby.some((token) =>
-      ["cancel", "delete", "dont", "don't", "minus", "no", "not", "remove", "without"].includes(token)
-    )
-  ) {
-    return "remove";
-  }
-
-  if (
-    nearby.some((token) =>
-      ["change", "make", "set", "update"].includes(token)
-    )
-  ) {
-    return "set";
-  }
-
-  return "add";
-}
-
-function shouldAcceptCandidate(
-  tokens: string[],
-  start: number,
-  end: number,
-  confidence: number
-): boolean {
-  if (confidence >= 0.92) return true;
-
-  const nearby = tokens.slice(Math.max(0, start - 5), Math.min(tokens.length, end + 4));
-  return nearby.some((token) => ORDER_INTENT_WORDS.includes(token));
-}
-
-function stripClearedHistory(transcript: string): string {
-  const normalized = normalizeText(transcript);
-  const clearCommands = [
-    "cancel order",
-    "clear order",
-    "delete order",
-    "remove everything",
-    "start again",
-    "start over",
-  ];
-  let clearIndex = -1;
-
-  clearCommands.forEach((command) => {
-    const index = normalized.lastIndexOf(command);
-    if (index > clearIndex) clearIndex = index + command.length;
-  });
-
-  return clearIndex === -1 ? transcript : normalized.slice(clearIndex);
-}
-
-function tokenize(value: string): string[] {
-  return normalizeText(value)
-    .split(" ")
-    .filter((token) => token.length > 0);
-}
-
-function normalizeText(value: string): string {
+export function normalizeText(value: string): string {
+  if (!value) return "";
   return value
     .toLowerCase()
     .normalize("NFD")
@@ -410,75 +83,508 @@ function normalizeText(value: string): string {
     .trim();
 }
 
-function averageBestTokenScore(
-  sourceTokens: string[],
-  targetTokens: string[],
-  scorer: (source: string, target: string) => number
-): number {
-  if (sourceTokens.length === 0 || targetTokens.length === 0) return 0;
+/**
+ * Checks if a sentence is an inquiry/question rather than an order placement.
+ */
+export function isQuestionOrInquiry(text: string): boolean {
+  const norm = normalizeText(text);
+  if (!norm) return false;
 
-  const scores = sourceTokens.map((source) =>
-    Math.max(...targetTokens.map((target) => scorer(source, target)))
+  if (text.includes("?")) return true;
+
+  const inquiryTriggers = [
+    /\b(what is|what's|what are|what do you have|what drinks|what food)\b/,
+    /\b(how much is|how much are|how much does|how much for|price of|cost of)\b/,
+    /\b(do you have|do you serve|do you offer|do you make)\b/,
+    /\b(is there|are there|can you tell me|could you tell me|tell me about)\b/,
+    /\b(what do you recommend|any recommendations|any specials|what's popular)\b/,
+    /\b(what kind of|what type of|what sort of)\b/,
+    /\b(is the [a-z\s]+ gluten free|does the [a-z\s]+ have|does it contain|any dairy|allergens)\b/,
+    /\b(how big is|what size is|how is it cooked|what comes with)\b/,
+  ];
+
+  return inquiryTriggers.some((trigger) => trigger.test(norm));
+}
+
+/**
+ * Checks if a statement requests order cancellation or clearing all items.
+ */
+export function isCancellationOrClear(text: string): boolean {
+  const norm = normalizeText(text);
+  const clearCommands = [
+    "cancel order",
+    "clear order",
+    "delete order",
+    "empty order",
+    "remove everything",
+    "cancel everything",
+    "start again",
+    "start over",
+    "reset order",
+  ];
+  return clearCommands.some((cmd) => norm.includes(cmd));
+}
+
+/**
+ * Parses numeric or word quantities.
+ */
+export function parseWordQuantity(val: string | undefined): number | undefined {
+  if (!val) return undefined;
+  const num = parseInt(val, 10);
+  if (!isNaN(num) && num > 0) return num;
+  return QUANTITY_WORDS[val.toLowerCase()];
+}
+
+/**
+ * Extracts cooking / dietary preferences (e.g. "medium rare", "no onions").
+ */
+export function extractNotes(text: string): { notes?: string; cleanedText: string } {
+  let cleaned = text;
+  const notesMatch = text.match(
+    /\b(rare|medium rare|medium well|medium|well done|no onions?|no dairy|no ice|gluten free|extra spicy|dressing on the side|on the rocks|with ice|extra sauce)\b/i
   );
-
-  return scores.reduce((total, score) => total + score, 0) / scores.length;
+  if (notesMatch) {
+    const notes = notesMatch[0].trim();
+    cleaned = cleaned.replace(notesMatch[0], " ").replace(/\s+/g, " ").trim();
+    return { notes, cleanedText: cleaned };
+  }
+  return { cleanedText: text };
 }
 
-function levenshteinScore(left: string, right: string): number {
-  if (left === right) return 1;
+/**
+ * Detects quantity corrections like:
+ * "make that two, not three", "change to two", "make it 2 instead of 3", "two not three"
+ */
+export function parseCorrection(text: string): {
+  isCorrection: boolean;
+  targetQuantity?: number;
+  rejectedQuantity?: number;
+  itemHint?: string;
+} {
+  const norm = normalizeText(text);
+  // Strip leading filler words
+  const cleaned = norm.replace(/^(?:actually|please|oh|wait|so|hey|hi)\s+/i, "").trim();
 
-  const distance = levenshteinDistance(left, right);
-  return 1 - distance / Math.max(left.length, right.length);
-}
+  // Pattern 1: "[make that/change to] [qty] [optional item] not/instead of [rejectedQty]"
+  const notPattern =
+    /^(?:(?:make that|change that to|change to|make it|set to)\s+)?([a-z0-9]+)(?:\s+([a-z\s]+?))?\s+(?:not|instead of)\s+([a-z0-9]+)$/i;
+  const match = cleaned.match(notPattern);
 
-function phoneticScoreForWords(left: string, right: string): number {
-  return soundex(left) === soundex(right) ? 1 : 0;
-}
-
-function soundex(value: string): string {
-  const cleaned = value.replace(/[^a-z]/g, "");
-  if (!cleaned) return "";
-
-  const [firstLetter] = cleaned;
-  const encoded = cleaned
-    .slice(1)
-    .split("")
-    .map((letter) => {
-      if ("bfpv".includes(letter)) return "1";
-      if ("cgjkqsxz".includes(letter)) return "2";
-      if ("dt".includes(letter)) return "3";
-      if (letter === "l") return "4";
-      if ("mn".includes(letter)) return "5";
-      if (letter === "r") return "6";
-      return "";
-    })
-    .filter((code, index, codes) => code && code !== codes[index - 1])
-    .join("");
-
-  return `${firstLetter}${encoded}000`.slice(0, 4);
-}
-
-function levenshteinDistance(left: string, right: string): number {
-  const distances = Array.from({ length: left.length + 1 }, (_, index) => index);
-
-  for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-    let previous = rightIndex;
-
-    for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-      const current = distances[leftIndex];
-      distances[leftIndex] =
-        left[leftIndex - 1] === right[rightIndex - 1]
-          ? previous
-          : Math.min(previous, distances[leftIndex], distances[leftIndex - 1]) + 1;
-      previous = current;
+  if (match) {
+    const targetQty = parseWordQuantity(match[1]);
+    const rejectedQty = parseWordQuantity(match[3]);
+    if (targetQty !== undefined) {
+      return {
+        isCorrection: true,
+        targetQuantity: targetQty,
+        rejectedQuantity: rejectedQty,
+        itemHint: match[2]?.trim() || undefined,
+      };
     }
-
-    distances[0] = rightIndex;
   }
 
-  return distances[left.length];
+  // Pattern 2: "change [item] to [qty]" or "make the [item] [qty]"
+  const changePattern =
+    /^(?:change|make|set|update)\s+(?:the\s+)?([a-z\s]+?)\s+(?:to|be)\s+([a-z0-9]+)$/i;
+  const changeMatch = cleaned.match(changePattern);
+  if (changeMatch) {
+    const targetQty = parseWordQuantity(changeMatch[2]);
+    if (targetQty !== undefined) {
+      return {
+        isCorrection: true,
+        targetQuantity: targetQty,
+        itemHint: changeMatch[1].trim(),
+      };
+    }
+  }
+
+  // Pattern 3: "just [qty] [optional item]"
+  const justPattern =
+    /^(?:just|only)\s+([a-z0-9]+)(?:\s+(?:of\s+)?([a-z\s]+))?$/i;
+  const justMatch = cleaned.match(justPattern);
+  if (justMatch) {
+    const targetQty = parseWordQuantity(justMatch[1]);
+    if (targetQty !== undefined) {
+      return {
+        isCorrection: true,
+        targetQuantity: targetQty,
+        itemHint: justMatch[2]?.trim() || undefined,
+      };
+    }
+  }
+
+  return { isCorrection: false };
 }
 
-function roundConfidence(confidence: number): number {
-  return Math.round(confidence * 100) / 100;
+
+/**
+ * Detects negative statements / item removals:
+ * "I don't want fries", "No fries", "Without fries", "Cancel the salad", "Remove wagyu"
+ */
+export function parseRemovalOrNegation(
+  text: string,
+  menu: MenuItem[]
+): { isRemoval: boolean; matchedItem?: MenuItem; quantityToRemove?: number } {
+  const norm = normalizeText(text);
+
+  const negationPatterns = [
+    /\b(?:i\s+)?(?:don't|dont|do not)\s+want\s+(?:any\s+|the\s+|an?\s+)?([a-z\s]+)/i,
+    /\b(?:no|without|not)\s+(?:any\s+|the\s+|an?\s+)?([a-z\s]+)/i,
+    /\b(?:cancel|remove|delete|drop|take off)\s+(?:the\s+|an?\s+)?([a-z\s]+)/i,
+    /\b([a-z\s]+)\s+(?:no thank you|no thanks|actually no|not that)\b/i,
+  ];
+
+  for (const pattern of negationPatterns) {
+    const match = norm.match(pattern);
+    if (match) {
+      const phrase = match[1]
+        .replace(/\b(thanks|thank you|please|for me)\b/gi, "")
+        .trim();
+      const matchResult = findBestMenuMatch(phrase, menu);
+      if (matchResult && matchResult.confidence >= 0.72) {
+        return {
+          isRemoval: true,
+          matchedItem: matchResult.item,
+          quantityToRemove: 1,
+        };
+      }
+    }
+  }
+
+  return { isRemoval: false };
+}
+
+/**
+ * Checks if user speech contains explicit order intent.
+ */
+export function hasExplicitOrderIntent(text: string): boolean {
+  const norm = normalizeText(text);
+
+  const intentPatterns = [
+    /\b(i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have)\b/,
+    /\b(please bring|bring me|give me|add|order|we'll have|we will have|we'd like|we would like)\b/,
+    /\b(put me down for|i want to order|i want|we want)\b/,
+    /^\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+[a-z]/i,
+  ];
+
+  return intentPatterns.some((p) => p.test(norm));
+}
+
+/**
+ * Check if a word/query is a known ambiguous generic term matching multiple items.
+ */
+export function checkAmbiguity(
+  query: string,
+  menu: MenuItem[]
+): { isAmbiguous: boolean; candidates: MenuItem[] } {
+  const normQuery = normalizeText(query);
+  const words = normQuery.split(" ").filter((w) => w.length > 2);
+
+  for (const word of words) {
+    if (AMBIGUOUS_KEYWORDS[word]) {
+      // Find matching items currently in active menu
+      const matchingItems = menu.filter((item) => {
+        const normName = normalizeText(item.name);
+        return (
+          normName.includes(word) ||
+          AMBIGUOUS_KEYWORDS[word].some((cand) =>
+            normalizeText(cand) === normName
+          )
+        );
+      });
+
+      if (matchingItems.length > 1) {
+        return { isAmbiguous: true, candidates: matchingItems };
+      }
+    }
+  }
+
+  return { isAmbiguous: false, candidates: [] };
+}
+
+/**
+ * Match a single phrase to the best menu item.
+ */
+export function findBestMenuMatch(
+  phrase: string,
+  menu: MenuItem[]
+): { confidence: number; item: MenuItem } | null {
+  const normQuery = normalizeText(phrase);
+  if (!normQuery || menu.length === 0) return null;
+
+  // 1. Direct exact name match
+  const exact = menu.find((m) => normalizeText(m.name) === normQuery);
+  if (exact) {
+    return { confidence: 1.0, item: exact };
+  }
+
+  // 2. Direct alias match
+  for (const item of menu) {
+    const normName = normalizeText(item.name);
+    const aliases = MENU_ALIASES[normName] || [];
+    for (const alias of aliases) {
+      if (normQuery === normalizeText(alias)) {
+        return { confidence: 0.98, item };
+      }
+      if (normQuery.includes(normalizeText(alias)) || normalizeText(alias).includes(normQuery)) {
+        const lenRatio = Math.min(normQuery.length, alias.length) / Math.max(normQuery.length, alias.length);
+        if (lenRatio >= 0.7) {
+          return { confidence: 0.92, item };
+        }
+      }
+    }
+  }
+
+  // 3. String similarity & token scoring
+  let best: { confidence: number; item: MenuItem } | null = null;
+
+  for (const item of menu) {
+    const normItemName = normalizeText(item.name);
+
+    if (normQuery === normItemName) {
+      return { confidence: 1.0, item };
+    }
+
+    // Levenshtein & token match
+    const sim = calculateSimilarity(normQuery, normItemName);
+    const queryTokens = normQuery.split(" ").filter((w) => w.length > 2);
+    const itemTokens = normItemName.split(" ").filter((w) => w.length > 2);
+
+    let matchedTokens = 0;
+    for (const qt of queryTokens) {
+      if (itemTokens.some((it) => it === qt || calculateSimilarity(qt, it) > 0.8)) {
+        matchedTokens++;
+      }
+    }
+
+    const tokenRatio = queryTokens.length > 0 ? matchedTokens / queryTokens.length : 0;
+    const score = Math.max(sim, tokenRatio * 0.9);
+
+    if (!best || score > best.confidence) {
+      best = { confidence: score, item };
+    }
+  }
+
+  return best;
+}
+
+function calculateSimilarity(a: string, b: string): number {
+  if (a === b) return 1.0;
+  if (!a || !b) return 0;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1.0;
+  const dist = levenshtein(a, b);
+  return Math.max(0, 1 - dist / maxLen);
+}
+
+function levenshtein(a: string, b: string): number {
+  const an = a.length;
+  const bn = b.length;
+  if (an === 0) return bn;
+  if (bn === 0) return an;
+
+  const matrix: number[][] = [];
+  for (let i = 0; i <= an; i++) matrix[i] = [i];
+  for (let j = 0; j <= bn; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= an; i++) {
+    for (let j = 1; j <= bn; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return matrix[an][bn];
+}
+
+/**
+ * Main Order Matcher that processes utterances sequentially into an accurate draft order.
+ */
+export function matchOrderFromTranscript(
+  transcript: string,
+  menu: MenuItem[]
+): OrderMatchResult {
+  if (!transcript || !transcript.trim() || !menu || menu.length === 0) {
+    return {
+      items: [],
+      needsConfirmation: [],
+      spokenTotal: "",
+      total: 0,
+    };
+  }
+
+  // Split transcript into discrete statements
+  const statements = transcript
+    .split(/\n|\band\b|;/gi)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  const draftItems = new Map<string, MatchedOrderItem>();
+  const needsConfirmationMap = new Map<string, MatchedOrderItem>();
+  let lastOrderedItemId: string | null = null;
+
+  for (const statement of statements) {
+    // 1. Check for cancellation / clear
+    if (isCancellationOrClear(statement)) {
+      draftItems.clear();
+      needsConfirmationMap.clear();
+      lastOrderedItemId = null;
+      continue;
+    }
+
+    // 2. Check for Inquiry / Question (e.g. "Do you have sparkling water?")
+    // Inquiries MUST NEVER add or modify draft items!
+    if (isQuestionOrInquiry(statement)) {
+      continue;
+    }
+
+    // 3. Check for Correction (e.g. "make that two, not three")
+    const correction = parseCorrection(statement);
+    if (correction.isCorrection && correction.targetQuantity !== undefined) {
+      let targetItem: MatchedOrderItem | undefined = undefined;
+
+      if (correction.itemHint) {
+        const hintMatch = findBestMenuMatch(correction.itemHint, menu);
+        if (hintMatch && hintMatch.confidence >= 0.7) {
+          targetItem = draftItems.get(hintMatch.item.id || hintMatch.item.name);
+        }
+      }
+
+      if (!targetItem && lastOrderedItemId) {
+        targetItem = draftItems.get(lastOrderedItemId);
+      }
+
+      if (targetItem) {
+        targetItem.quantity = correction.targetQuantity;
+        targetItem.lineTotal = Number((targetItem.quantity * targetItem.price).toFixed(2));
+        if (targetItem.quantity <= 0) {
+          draftItems.delete(targetItem.id);
+        }
+      }
+      continue;
+    }
+
+    // 4. Check for Removal / Negation (e.g. "I don't want fries", "no fries")
+    const removal = parseRemovalOrNegation(statement, menu);
+    if (removal.isRemoval && removal.matchedItem) {
+      const key = removal.matchedItem.id || removal.matchedItem.name;
+      const existing = draftItems.get(key);
+      if (existing) {
+        existing.quantity -= removal.quantityToRemove || 1;
+        existing.lineTotal = Number((existing.quantity * existing.price).toFixed(2));
+        if (existing.quantity <= 0) {
+          draftItems.delete(key);
+        }
+      }
+      // If item was not in the draft, doing nothing is correct. Never add it!
+      continue;
+    }
+
+    // 5. Must have explicit ordering intent or clear quantity + item structure
+    if (!hasExplicitOrderIntent(statement)) {
+      // If there's no explicit order intent, do not add random words from casual conversation
+      continue;
+    }
+
+    // 6. Extract quantity, cooking preferences, and menu item phrase
+    const { notes, cleanedText } = extractNotes(statement);
+
+    // Extract leading quantity
+    let quantity = 1;
+    let itemPhrase = cleanedText;
+
+    const qtyMatch = cleanedText.match(
+      /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|please bring|give me|add|order)?\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
+    );
+
+    if (qtyMatch) {
+      const parsedQty = parseWordQuantity(qtyMatch[1]);
+      if (parsedQty !== undefined && parsedQty > 0) {
+        quantity = parsedQty;
+        itemPhrase = qtyMatch[2].trim();
+      }
+    } else {
+      // Strip conversational prefixes
+      itemPhrase = cleanedText
+        .replace(
+          /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|please bring|give me|add|order)\s+/i,
+          ""
+        )
+        .trim();
+    }
+
+    // Check for Ambiguity (e.g. "fillet" matching multiple items)
+    const ambiguity = checkAmbiguity(itemPhrase, menu);
+    if (ambiguity.isAmbiguous && ambiguity.candidates.length > 1) {
+      const ambKey = `ambiguous:${itemPhrase}`;
+      needsConfirmationMap.set(ambKey, {
+        id: ambKey,
+        name: `Clarification needed: ${ambiguity.candidates.map((c) => c.name).join(" or ")}`,
+        quantity,
+        price: 0,
+        lineTotal: 0,
+        confidence: 0.7,
+        matchedText: itemPhrase,
+        status: "needs_confirmation",
+        candidates: ambiguity.candidates.map((c) => ({
+          id: c.id || c.name,
+          name: c.name,
+          price: c.price,
+        })),
+      });
+      continue;
+    }
+
+    // Match against active menu
+    const match = findBestMenuMatch(itemPhrase, menu);
+    if (!match || match.confidence < 0.75) {
+      continue;
+    }
+
+    const item = match.item;
+    const key = item.id || item.name;
+    const price = Number(item.price);
+
+    const existing = draftItems.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+      existing.lineTotal = Number((existing.quantity * price).toFixed(2));
+      if (notes && !existing.notes?.includes(notes)) {
+        existing.notes = existing.notes ? `${existing.notes}; ${notes}` : notes;
+      }
+      lastOrderedItemId = key;
+    } else {
+      draftItems.set(key, {
+        id: item.id || item.name,
+        name: item.name,
+        quantity,
+        price,
+        lineTotal: Number((quantity * price).toFixed(2)),
+        confidence: match.confidence,
+        matchedText: itemPhrase,
+        status: "matched",
+        notes,
+      });
+      lastOrderedItemId = key;
+    }
+  }
+
+  const items = Array.from(draftItems.values());
+  const needsConfirmation = Array.from(needsConfirmationMap.values());
+  const total = Number(
+    items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
+  );
+
+  return {
+    items,
+    needsConfirmation,
+    spokenTotal:
+      total > 0
+        ? `This is the total after calculating: $${total.toFixed(2)}.`
+        : "",
+    total,
+  };
 }
