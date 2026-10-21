@@ -42,7 +42,7 @@ interface TranscriptEntry {
 export default function CustomerPage() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [restaurantName, setRestaurantName] = useState<string>("Restaurant A");
+  const [restaurantName, setRestaurantName] = useState<string>("");
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
 
@@ -84,7 +84,10 @@ export default function CustomerPage() {
   // 1. Check saved token on mount
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!savedToken) return;
+    if (!savedToken) {
+      setIsMenuLoading(false);
+      return;
+    }
 
     getMe(savedToken)
       .then((data) => {
@@ -94,7 +97,7 @@ export default function CustomerPage() {
           email: data.user.email,
           name: data.user.name,
           restaurantId: data.restaurant?.id || "",
-          restaurantName: data.restaurant?.name || "Restaurant A",
+          restaurantName: data.restaurant?.name || "",
           role: data.role,
         });
         if (data.restaurant?.name) {
@@ -107,18 +110,28 @@ export default function CustomerPage() {
         localStorage.removeItem(TOKEN_STORAGE_KEY);
         setAuthToken(null);
         setCurrentUser(null);
+        setRestaurantName("");
+        setMenu([]);
+        setIsMenuLoading(false);
       });
   }, []);
 
-  // 2. Load restaurant menu whenever authToken changes
+  // 2. Load restaurant menu whenever authToken changes (pure SaaS isolation)
   useEffect(() => {
     let isCancelled = false;
 
     async function loadMenu() {
+      if (!authToken) {
+        // Multi-tenant SaaS: If signed out, clear menu immediately so no database menus leak
+        setMenu([]);
+        setIsMenuLoading(false);
+        return;
+      }
+
       try {
         setIsMenuLoading(true);
         setMenuError("");
-        const items = await getMenu(authToken ?? undefined);
+        const items = await getMenu(authToken);
         if (!isCancelled) {
           setMenu(items);
           setMenuError("");
@@ -153,7 +166,7 @@ export default function CustomerPage() {
     setPersistedOrder(null);
     setConversation([]);
     setOrderItems([]);
-    setStatus(`Database synced with ${user.restaurantName || "Restaurant A"}`);
+    setStatus(`Database synced with ${user.restaurantName || "Restaurant"}`);
   }, []);
 
   // Handle logout
@@ -161,10 +174,12 @@ export default function CustomerPage() {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setAuthToken(null);
     setCurrentUser(null);
+    setRestaurantName("");
+    setMenu([]);
     setPersistedOrder(null);
     setConversation([]);
     setOrderItems([]);
-    setStatus("Switched to offline prototype mode.");
+    setStatus("Restaurant signed out • Connect a suite to begin");
   }, []);
 
   // Extract user speech transcript
@@ -192,8 +207,8 @@ export default function CustomerPage() {
 
     // Set order items derived directly from the active dialogue
     setOrderItems((currentManual) => {
-      // If voice recognized items, reconstruct the active order state
-      if (match.items.length > 0) {
+      // If voice recognized order operations (add, remove, clear, correction), update active order state
+      if (match.hasOrderOperations) {
         return match.items.map((mItem) => ({
           ...mItem,
           price: Number(mItem.price),
@@ -202,6 +217,14 @@ export default function CustomerPage() {
       }
       return currentManual;
     });
+
+    if (match.hasOrderOperations && match.lastAction) {
+      if (match.lastAction.type === "clear") {
+        setStatus("Order cleared by voice instruction. Ready for your selections.");
+      } else if (match.lastAction.type === "remove" && match.lastAction.itemName) {
+        setStatus(`Removed ${match.lastAction.itemName} from active order.`);
+      }
+    }
   }, [currentOrder, menu]);
 
   // Calculate 100% authoritative order total
@@ -222,8 +245,8 @@ export default function CustomerPage() {
   }, [orderItems]);
 
   const displayStatus =
-    calculatedTotal > 0
-      ? `Active order total: $${calculatedTotal.toFixed(2)}`
+    calculatedTotal > 0 && !persistedOrder
+      ? `Order Total: $${calculatedTotal.toFixed(2)} • Shall I let the chef know? (Say "Yes" or "Confirm" whenever you're ready)`
       : status;
 
   const conversationText = useMemo(() => {
@@ -445,6 +468,7 @@ export default function CustomerPage() {
       const idempotencyKey = `ord-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const payload: CreateOrderPayload = {
         idempotencyKey,
+        status: "SENT_TO_KITCHEN",
         specialInstructions: specialInstructions.trim() || undefined,
         items: orderItems.map((item) => ({
           menuItemId: item.id,
@@ -458,10 +482,7 @@ export default function CustomerPage() {
 
       let finalOrder = created;
       try {
-        if (created.status === "PENDING") {
-          await updateOrderStatus(created.id, "CONFIRMED", authToken ?? undefined);
-          finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken ?? undefined);
-        } else if (created.status === "CONFIRMED") {
+        if (created.status === "PENDING" || created.status === "CONFIRMED") {
           finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken ?? undefined);
         }
       } catch (transErr) {
@@ -470,11 +491,35 @@ export default function CustomerPage() {
 
       setPersistedOrder(finalOrder);
       setStatus(
-        `Order #${finalOrder.id.slice(0, 8)} confirmed and dispatched to kitchen! Total: $${Number(finalOrder.total).toFixed(2)}`
+        `Order #${finalOrder.id.slice(0, 8)} confirmed with the chef! Preparation is underway. Total: $${Number(finalOrder.total).toFixed(2)}`
       );
 
+      // Append assistant confirmation text to dialogue log
+      setConversation((curr) => {
+        const hasRecentConfirm = curr.some(
+          (c) => c.role === "assistant" && (c.text.toLowerCase().includes("chef") || c.text.toLowerCase().includes("prepare"))
+        );
+        if (!hasRecentConfirm) {
+          return [
+            ...curr,
+            {
+              id: `confirm-ack-${Date.now()}`,
+              isFinal: true,
+              role: "assistant",
+              text: `Confirmed! I will let the chef know right away and we will begin preparing your order for you. Total: $${Number(finalOrder.total).toFixed(2)}. Please relax and keep an eye on the menu if you would like to add any drinks or desserts.`,
+            },
+          ];
+        }
+        return curr;
+      });
+
       if (sessionRef.current) {
-        stopListening();
+        // Allow the assistant's voice confirmation to finish playback naturally
+        setTimeout(() => {
+          if (sessionRef.current) {
+            stopListening();
+          }
+        }, 4000);
       }
     } catch (err: unknown) {
       const errorMsg =
@@ -495,7 +540,7 @@ export default function CustomerPage() {
       .pop();
 
     if (lastFinalUserEntry && isVoiceConfirmation(lastFinalUserEntry.text)) {
-      setStatus("Voice command detected: Dispatching order to kitchen...");
+      setStatus("Voice confirmation detected: Preparing order with the chef...");
       void handleSubmitConfirmedOrder();
     }
   }, [conversation, orderItems.length, isSubmittingOrder, persistedOrder, handleSubmitConfirmedOrder]);

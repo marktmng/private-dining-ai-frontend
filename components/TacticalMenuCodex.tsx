@@ -63,7 +63,7 @@ export default function TacticalMenuCodex({
               Menu Codex // Selections
             </h3>
             <span className="font-mono text-[9px] bg-[#B68A2D]/20 text-[#E5C378] border border-[#B68A2D]/40 px-2 py-0.5 rounded">
-              {isDbMenu ? "LIVE DB" : "PROTOTYPE"}
+              LIVE MENU
             </span>
           </div>
           <p className="font-mono text-[10px] text-[#B68A2D]/80 mt-0.5">

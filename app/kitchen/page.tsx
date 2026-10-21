@@ -122,22 +122,22 @@ export default function KitchenPage() {
     setOrders([]);
   }, []);
 
-  // Kitchen State Transition Actions
+  // Kitchen State Transition Actions (supports both Station Mode and Staff Token)
   const handleAcceptAndPrepare = async (order: PersistedOrder) => {
-    if (!authToken || actionInProgressId) return;
+    if (actionInProgressId) return;
     setActionInProgressId(order.id);
     setError(null);
 
     try {
       if (order.status === "PENDING") {
-        await updateOrderStatus(order.id, "CONFIRMED", authToken);
-        await updateOrderStatus(order.id, "SENT_TO_KITCHEN", authToken);
+        await updateOrderStatus(order.id, "CONFIRMED", authToken ?? undefined);
+        await updateOrderStatus(order.id, "SENT_TO_KITCHEN", authToken ?? undefined);
       } else if (order.status === "CONFIRMED") {
-        await updateOrderStatus(order.id, "SENT_TO_KITCHEN", authToken);
+        await updateOrderStatus(order.id, "SENT_TO_KITCHEN", authToken ?? undefined);
       }
 
-      await updateOrderStatus(order.id, "PREPARING", authToken);
-      await fetchOrders(authToken, true);
+      await updateOrderStatus(order.id, "PREPARING", authToken ?? undefined);
+      await fetchOrders(authToken ?? undefined, true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to transition order status.";
       setError(msg);
@@ -147,13 +147,13 @@ export default function KitchenPage() {
   };
 
   const handleMarkReady = async (order: PersistedOrder) => {
-    if (!authToken || actionInProgressId) return;
+    if (actionInProgressId) return;
     setActionInProgressId(order.id);
     setError(null);
 
     try {
-      await updateOrderStatus(order.id, "READY", authToken);
-      await fetchOrders(authToken, true);
+      await updateOrderStatus(order.id, "READY", authToken ?? undefined);
+      await fetchOrders(authToken ?? undefined, true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to mark order ready.";
       setError(msg);
@@ -163,13 +163,13 @@ export default function KitchenPage() {
   };
 
   const handleMarkCompleted = async (order: PersistedOrder) => {
-    if (!authToken || actionInProgressId) return;
+    if (actionInProgressId) return;
     setActionInProgressId(order.id);
     setError(null);
 
     try {
-      await updateOrderStatus(order.id, "COMPLETED", authToken);
-      await fetchOrders(authToken, true);
+      await updateOrderStatus(order.id, "COMPLETED", authToken ?? undefined);
+      await fetchOrders(authToken ?? undefined, true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to complete order.";
       setError(msg);
@@ -184,19 +184,19 @@ export default function KitchenPage() {
   };
 
   const handleConfirmReject = async () => {
-    if (!authToken || !rejectModalOrder || isRejecting) return;
+    if (!rejectModalOrder || isRejecting) return;
     setIsRejecting(true);
 
     try {
       await updateOrderStatus(
         rejectModalOrder.id,
         "CANCELLED",
-        authToken,
+        authToken ?? undefined,
         rejectReason.trim() || "Rejected by kitchen staff"
       );
       setRejectModalOrder(null);
       setRejectReason("");
-      await fetchOrders(authToken, true);
+      await fetchOrders(authToken ?? undefined, true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to reject order.";
       setError(msg);
@@ -280,8 +280,8 @@ export default function KitchenPage() {
           <div className="flex items-center gap-2.5 font-mono text-xs">
             <button
               type="button"
-              onClick={() => authToken && fetchOrders(authToken)}
-              disabled={isLoading || !authToken}
+              onClick={() => fetchOrders(authToken ?? undefined)}
+              disabled={isLoading}
               className="px-3.5 py-1.5 rounded-xl bg-[#211F1A] hover:bg-[#28251E] border border-[#B68A2D]/40 text-[#E5C378] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
@@ -289,38 +289,35 @@ export default function KitchenPage() {
             </button>
             <div className="px-3 py-1.5 rounded-xl bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981] flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
-              <span className="font-bold">LIVE TELEMETRY (4s)</span>
+              <span className="font-bold">LIVE TELEMETRY (3s)</span>
             </div>
           </div>
         </div>
 
-        {/* Unauthenticated State */}
-        {!authToken ? (
-          <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/40 bg-[#1C1A15]/90 p-12 text-center space-y-4 shadow-2xl max-w-lg mx-auto">
-            <div className="corner-bracket-tl !w-4 !h-4" />
-            <div className="corner-bracket-tr !w-4 !h-4" />
-            <div className="corner-bracket-bl !w-4 !h-4" />
-            <div className="corner-bracket-br !w-4 !h-4" />
-
-            <div className="w-16 h-16 rounded-full bg-[#25221B] border border-[#B68A2D] flex items-center justify-center mx-auto text-[#B68A2D] shadow-[0_0_20px_rgba(182,138,45,0.4)]">
-              <ShieldAlert className="w-8 h-8" />
+        {/* Live Station Banner when viewing without explicit login */}
+        {!authToken && (
+          <div className="corner-bracket-container rounded-xl border border-[#B68A2D]/35 bg-[#1C1A15]/90 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono text-xs shadow-lg">
+            <div className="corner-bracket-tl !w-2.5 !h-2.5" />
+            <div className="corner-bracket-tr !w-2.5 !h-2.5" />
+            <div className="corner-bracket-bl !w-2.5 !h-2.5" />
+            <div className="corner-bracket-br !w-2.5 !h-2.5" />
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-ping" />
+              <span className="text-[#F3EFE6]">
+                Station Mode: <strong className="text-[#E5C378]">Restaurant A (Executive KDS)</strong> • Live Table Dispatch Active
+              </span>
             </div>
-            <h2 className="font-mono text-lg font-bold uppercase tracking-wider text-[#F3EFE6]">
-              Kitchen Authentication Required
-            </h2>
-            <p className="font-mono text-xs text-[#B68A2D]/80 leading-relaxed">
-              Authenticate with Restaurant A staff credentials to receive live table orders and command the kitchen routing pipeline.
-            </p>
             <button
               type="button"
               onClick={() => setIsLoginModalOpen(true)}
-              className="mt-2 px-6 py-2.5 rounded-xl font-mono text-xs font-bold bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#191814] shadow-[0_0_20px_rgba(182,138,45,0.4)] hover:opacity-95 transition-all cursor-pointer uppercase tracking-wider"
+              className="px-3 py-1 rounded-lg bg-[#25221B] hover:bg-[#2C2820] text-[#E5C378] border border-[#B68A2D]/40 font-bold transition-colors cursor-pointer"
             >
-              Sign In as Chef / Kitchen Staff
+              Sign In for Staff Privileges
             </button>
           </div>
-        ) : (
-          <div className="space-y-6">
+        )}
+
+        <div className="space-y-6">
             {error && (
               <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 font-mono text-xs flex items-center justify-between">
                 <span>{error}</span>
@@ -624,7 +621,6 @@ export default function KitchenPage() {
               </div>
             )}
           </div>
-        )}
       </div>
 
       {/* Rejection Modal */}

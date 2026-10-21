@@ -105,7 +105,7 @@ export default function TacticalHeader({
                 className="font-mono text-[10px] text-[#B68A2D] hover:text-[#F3EFE6] flex items-center gap-1 border border-[#B68A2D]/30 px-2 py-1 rounded"
               >
                 <LogOut className="w-3 h-3" />
-                <span>{restaurantName || "Rest A"}</span>
+                <span>{restaurantName || "Sign Out"}</span>
               </button>
             ) : (
               <button
@@ -204,7 +204,7 @@ export default function TacticalHeader({
               <span className="w-2 h-2 rounded-full bg-[#10B981]" />
               <div className="text-left leading-tight">
                 <span className="text-[#10B981] font-bold block">
-                  {restaurantName || "Restaurant A"}
+                  {restaurantName || user.restaurantName || "Connected Restaurant"}
                 </span>
                 <span className="text-[#B68A2D]/60 text-[9px] block">
                   {user.email.split("@")[0]}
@@ -221,15 +221,16 @@ export default function TacticalHeader({
             </div>
           ) : (
             <div className="flex items-center gap-2 bg-[#201E19] border border-[#B68A2D]/30 rounded-lg px-3 py-1 font-mono text-xs">
-              <span className="w-2 h-2 rounded-full bg-[#F59E0B]" />
-              <span className="text-[#E5C378]">Prototype</span>
+              <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse" />
+              <span className="text-[#F3EFE6]">VIP SUITE 01</span>
               <button
                 type="button"
                 onClick={onOpenLogin}
-                className="ml-1 px-2.5 py-1 bg-[#B68A2D] hover:bg-[#C89B37] text-[#191814] font-bold rounded text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                className="ml-1 px-2.5 py-1 bg-[#B68A2D]/20 hover:bg-[#B68A2D]/40 text-[#E5C378] border border-[#B68A2D]/40 font-bold rounded text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                title="Staff Management Portal"
               >
                 <LogIn className="w-3 h-3" />
-                <span>Sign In</span>
+                <span>Staff Access</span>
               </button>
             </div>
           )}

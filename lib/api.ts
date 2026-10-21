@@ -74,17 +74,26 @@ export async function getMe(token: string): Promise<MeResponse["data"]> {
 }
 
 /**
- * Load restaurant menu.
+ * Load restaurant menu for SaaS multi-tenancy.
  * - If token is provided: Loads active items from the authenticated restaurant's database menus.
- * - If token is omitted: Loads legacy prototype menu for backward compatibility.
+ * - If restaurantId is provided: Loads active items for that specific restaurant suite.
+ * - If signed out and no restaurant context is provided: returns empty list (no database data leaked).
  */
-export async function getMenu(token?: string): Promise<MenuItem[]> {
+export async function getMenu(token?: string, restaurantId?: string): Promise<MenuItem[]> {
+  if (!token && !restaurantId) {
+    return [];
+  }
+
   const headers: Record<string, string> = {};
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}/menu`, {
+  const url = restaurantId
+    ? `${API_URL}/menu?restaurantId=${encodeURIComponent(restaurantId)}`
+    : `${API_URL}/menu`;
+
+  const response = await fetch(url, {
     headers,
     cache: "no-store",
   });

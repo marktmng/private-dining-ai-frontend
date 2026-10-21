@@ -465,6 +465,19 @@ export default function TacticalAssistantPanel({
                       </p>
                     )}
 
+                    {/* Confirmation Prompt Box */}
+                    <div className="p-3 rounded-xl bg-[#B68A2D]/10 border border-[#B68A2D]/40 text-center space-y-1">
+                      <p className="font-mono text-xs font-bold text-[#E5C378]">
+                        Shall I notify the chef to prepare your order?
+                      </p>
+                      <p className="font-mono text-[11px] text-[#F3EFE6]/80">
+                        Total Amount: <span className="text-[#E5C378] font-bold">${total.toFixed(2)}</span>
+                      </p>
+                      <p className="font-mono text-[10px] text-[#B68A2D]">
+                        Take your time and explore the menu if you&apos;d like to add anything else. Say <span className="text-[#E5C378] font-bold">&ldquo;Yes&rdquo;</span>, <span className="text-[#E5C378] font-bold">&ldquo;Confirm&rdquo;</span>, or tap below whenever you are ready.
+                      </p>
+                    </div>
+
                     {/* Action Button */}
                     <div className="space-y-2">
                       <button
@@ -476,17 +489,17 @@ export default function TacticalAssistantPanel({
                         {isSubmitting ? (
                           <>
                             <span className="w-3.5 h-3.5 border-2 border-[#191814]/30 border-t-[#191814] rounded-full animate-spin" />
-                            <span>TRANSMITTING TO KITCHEN...</span>
+                            <span>NOTIFYING EXECUTIVE CHEF...</span>
                           </>
                         ) : (
                           <>
                             <Send className="w-4 h-4" />
-                            <span>TRANSMIT ORDER TO KITCHEN ({items.length} ITEMS)</span>
+                            <span>CONFIRM ORDER FOR THE CHEF ({items.length} {items.length === 1 ? "ITEM" : "ITEMS"})</span>
                           </>
                         )}
                       </button>
                       <div className="p-2 rounded-lg bg-[#211F1A] border border-[#B68A2D]/30 text-center font-mono text-[10px] text-[#E5C378]">
-                        🎙️ Voice Command: Speak &ldquo;Confirmed&rdquo; or &ldquo;Send it to Order&rdquo; to dispatch automatically.
+                        🎙️ Voice Command: Say &ldquo;Yes&rdquo;, &ldquo;Confirm&rdquo;, or &ldquo;Go ahead&rdquo; whenever you are ready for the chef to prepare your order.
                       </div>
                     </div>
                   </div>

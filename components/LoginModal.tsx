@@ -41,6 +41,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
 
   function handleQuickFill() {
     setEmail("restaurant-a@example.com");
+    setPassword("TestPassword123!");
     setError(null);
   }
 
