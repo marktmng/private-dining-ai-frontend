@@ -190,6 +190,48 @@ const assistantSpeech = "The Chef recommends our Wagyu Ribeye and Pan-Seared Sal
 const assistantResult = matchOrderFromTranscript(assistantSpeech, sampleMenu);
 assert(assistantResult.items.length === 0, "Assistant speech recommendations add 0 items to draft");
 
+// 12. Conversational Greetings, Polite Ordering & Question Marks
+console.log("\n--- 12. Conversational Greetings, Trailing Fillers & Polite Questions ---");
+
+// Test non-menu item with conversational greeting and trailing phrases
+const nonMenuResult = matchOrderFromTranscript(
+  "Halo. Can I have a paper card, please? That's all.",
+  sampleMenu
+);
+assert(nonMenuResult.items.length === 0, "'Halo. Can I have a paper card...' adds 0 items (not on menu)");
+assert(
+  (nonMenuResult.unmatchedPhrases?.length ?? 0) > 0,
+  "Captures 'paper card' in unmatchedPhrases for UI feedback"
+);
+
+// Test valid menu item with greeting, "Can I have", question mark, and "That's all."
+const greetingOrder = matchOrderFromTranscript(
+  "Halo. Can I have a Wagyu Ribeye, please? That's all.",
+  sampleMenu
+);
+assert(greetingOrder.items.length === 1, "'Halo. Can I have a Wagyu Ribeye, please? That's all.' matches 1 item");
+assert(greetingOrder.items[0]?.name === "Wagyu Ribeye", "Item is Wagyu Ribeye");
+assert(greetingOrder.items[0]?.quantity === 1, "Quantity is exactly 1");
+assert(greetingOrder.items[0]?.lineTotal === 48, "Price is exactly $48.00");
+
+// Test "Can I have the [item]?" with question mark
+const questionOrder = matchOrderFromTranscript(
+  "Can I have the Wagyu Ribeye, please?",
+  sampleMenu
+);
+assert(questionOrder.items.length === 1, "'Can I have the Wagyu Ribeye, please?' matches 1 item");
+assert(questionOrder.items[0]?.name === "Wagyu Ribeye", "Item is Wagyu Ribeye");
+
+// Test multi-item with greetings and 'and'
+const multiGreetingOrder = matchOrderFromTranscript(
+  "Halo. Can I get two Caesar Salads please and one Flat White? That's all.",
+  sampleMenu
+);
+assert(multiGreetingOrder.items.length === 2, "Matches 2 items from conversational speech");
+assert(multiGreetingOrder.items.find((i) => i.name === "Caesar Salad")?.quantity === 2, "2x Caesar Salad matched");
+assert(multiGreetingOrder.items.find((i) => i.name === "Flat White")?.quantity === 1, "1x Flat White matched");
+assert(multiGreetingOrder.total === 2 * 18 + 5.5, `Total is exactly $${2 * 18 + 5.5}0 ($41.50)`);
+
 console.log("\n=======================================================");
 console.log(`TOTAL MATCHER TESTS : ${total}`);
 console.log(`PASSED              : ${passed}`);

@@ -1,14 +1,203 @@
 @import "tailwindcss";
 
+:root {
+  --bg-dark: #191814;
+  --bg-deep: #11100d;
+  --bg-surface: #211f1a;
+  --bg-elevated: #2a2721;
+  --bg-card: rgba(30, 28, 23, 0.88);
+  --gold-primary: #b68a2d;
+  --gold-bright: #f5c869;
+  --gold-light: #dfc484;
+  --gold-muted: rgba(182, 138, 45, 0.22);
+  --gold-border: rgba(182, 138, 45, 0.35);
+  --cyan-accent: #22d3ee;
+  --emerald-accent: #10b981;
+  --amber-accent: #f59e0b;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  background: #0f172a;
-  color: white;
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #191814;
+  color: #f3efe6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+  min-height: 100vh;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Tactical Grid Background */
+.tactical-grid {
+  background-color: #191814;
+  background-image: 
+    linear-gradient(to right, rgba(182, 138, 45, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(182, 138, 45, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.tactical-vignette {
+  background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(17, 16, 13, 0.85) 100%);
+}
+
+/* Corner Bracket Accents */
+.corner-bracket-container {
+  position: relative;
+}
+
+.corner-bracket-tl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-top: 1.5px solid #b68a2d;
+  border-left: 1.5px solid #b68a2d;
+  pointer-events: none;
+}
+
+.corner-bracket-tr {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-top: 1.5px solid #b68a2d;
+  border-right: 1.5px solid #b68a2d;
+  pointer-events: none;
+}
+
+.corner-bracket-bl {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-bottom: 1.5px solid #b68a2d;
+  border-left: 1.5px solid #b68a2d;
+  pointer-events: none;
+}
+
+.corner-bracket-br {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-bottom: 1.5px solid #b68a2d;
+  border-right: 1.5px solid #b68a2d;
+  pointer-events: none;
+}
+
+/* Tactical HUD border styles */
+.hud-border {
+  border: 1px solid rgba(182, 138, 45, 0.28);
+}
+
+.hud-border-glow {
+  border: 1px solid rgba(182, 138, 45, 0.45);
+  box-shadow: 0 0 15px rgba(182, 138, 45, 0.15), inset 0 0 15px rgba(182, 138, 45, 0.05);
+}
+
+.hud-panel {
+  background: rgba(28, 26, 21, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(182, 138, 45, 0.25);
+}
+
+/* Custom Tactical Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #191814;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(182, 138, 45, 0.35);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b68a2d;
+}
+
+/* Keyframes */
+@keyframes slowSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes reverseSpin {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes pulseGold {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes radarSweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tickerMove {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-spin-slow {
+  animation: slowSpin 28s linear infinite;
+}
+
+.animate-spin-reverse-slow {
+  animation: reverseSpin 36s linear infinite;
+}
+
+.animate-pulse-gold {
+  animation: pulseGold 2.8s ease-in-out infinite;
+}
+
+.animate-radar {
+  animation: radarSweep 6s linear infinite;
+}
+
+.animate-ticker {
+  display: flex;
+  width: max-content;
+  animation: tickerMove 30s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
 }

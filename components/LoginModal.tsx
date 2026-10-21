@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { login } from "@/lib/api";
 import type { AuthUser } from "@/types/order";
+import { Sparkles, Shield, X, KeyRound, Mail } from "lucide-react";
 
 interface Props {
   isOpen: boolean;
@@ -44,32 +45,50 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-white">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <div>
-            <h3 className="text-xl font-bold">Restaurant Sign In</h3>
-            <p className="text-sm text-slate-400">Authenticate for SaaS live database menus</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 select-none">
+      <div className="corner-bracket-container relative w-full max-w-md rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/40 p-6 shadow-[0_0_50px_rgba(0,0,0,0.8)] text-[#F3EFE6]">
+        {/* Corner Brackets */}
+        <div className="corner-bracket-tl !w-4 !h-4" />
+        <div className="corner-bracket-tr !w-4 !h-4" />
+        <div className="corner-bracket-bl !w-4 !h-4" />
+        <div className="corner-bracket-br !w-4 !h-4" />
+
+        {/* Modal Header */}
+        <div className="flex items-center justify-between pb-4 border-b border-[#B68A2D]/25">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#25221B] border border-[#B68A2D] flex items-center justify-center">
+              <Shield className="w-4 h-4 text-[#B68A2D]" />
+            </div>
+            <div>
+              <h3 className="font-mono text-sm font-bold tracking-widest text-[#F3EFE6] uppercase">
+                Restaurant Authentication
+              </h3>
+              <p className="font-mono text-[10px] text-[#B68A2D]/80">
+                SaaS Live Database & Kitchen Dispatch Sync
+              </p>
+            </div>
           </div>
+
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors p-1"
+            className="text-[#B68A2D]/60 hover:text-white p-1 rounded hover:bg-[#25221B] transition-colors"
             aria-label="Close"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {error ? (
-          <div className="mt-4 p-3 rounded-lg bg-red-950/60 border border-red-500/50 text-red-200 text-sm">
+        {error && (
+          <div className="mt-4 p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 font-mono text-xs">
             {error}
           </div>
-        ) : null}
+        )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4 font-mono">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Restaurant Staff Email
+            <label className="block text-xs font-bold text-[#E5C378] uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-[#B68A2D]" />
+              <span>Restaurant Staff Email</span>
             </label>
             <input
               type="email"
@@ -77,13 +96,14 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="e.g. restaurant-a@example.com"
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 focus:border-[#B68A2D] px-3.5 py-2.5 text-xs text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none shadow-inner"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Password
+            <label className="block text-xs font-bold text-[#E5C378] uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-[#B68A2D]" />
+              <span>Staff Security Key</span>
             </label>
             <input
               type="password"
@@ -91,7 +111,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 focus:border-[#B68A2D] px-3.5 py-2.5 text-xs text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none shadow-inner"
             />
           </div>
 
@@ -99,9 +119,9 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
             <button
               type="button"
               onClick={handleQuickFill}
-              className="text-xs text-blue-400 hover:text-blue-300 underline"
+              className="text-[11px] text-[#B68A2D] hover:text-[#E5C378] underline cursor-pointer"
             >
-              Fill Restaurant A Demo
+              Fill Restaurant A Demo Credentials
             </button>
           </div>
 
@@ -109,16 +129,26 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg bg-slate-800 hover:bg-slate-700 py-2.5 font-medium transition-colors"
+              className="flex-1 rounded-xl bg-[#211F1A] hover:bg-[#28251E] border border-[#B68A2D]/30 py-2.5 font-bold text-xs text-[#F3EFE6]/80 transition-colors uppercase tracking-wider"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 py-2.5 font-medium transition-colors"
+              className="flex-1 rounded-xl bg-gradient-to-r from-[#B68A2D] to-[#E5C378] hover:opacity-95 text-[#191814] font-bold text-xs py-2.5 transition-all shadow-[0_0_15px_rgba(182,138,45,0.4)] disabled:opacity-50 uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              {isLoading ? "Signing in..." : "Sign In"}
+              {isLoading ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-[#191814]/30 border-t-[#191814] rounded-full animate-spin" />
+                  <span>Authenticating...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Authenticate</span>
+                </>
+              )}
             </button>
           </div>
         </form>

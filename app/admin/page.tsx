@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Header from "@/components/Header";
-import LoginModal from "@/components/LoginModal";
+import TacticalHeader from "@/components/TacticalHeader";
+import TacticalLoginModal from "@/components/LoginModal";
+import TacticalTicker from "@/components/TacticalTicker";
 import {
   createMenuItem,
   deleteMenuItem,
@@ -19,6 +20,25 @@ import type {
   MenuWithItems,
   PersistedOrder,
 } from "@/types/order";
+import {
+  BarChart3,
+  Receipt,
+  UtensilsCrossed,
+  Plus,
+  Edit2,
+  Trash2,
+  RotateCcw,
+  CheckCircle2,
+  Clock,
+  DollarSign,
+  Flame,
+  ShieldAlert,
+  Search,
+  SlidersHorizontal,
+  FileText,
+  X,
+  Sparkles,
+} from "lucide-react";
 
 const TOKEN_STORAGE_KEY = "aivora_auth_token";
 
@@ -127,7 +147,6 @@ export default function AdminPage() {
       void fetchMenus(authToken);
     });
 
-    // Auto-refresh orders every 5 seconds
     const interval = setInterval(() => {
       void fetchOrders(authToken, true);
     }, 5000);
@@ -160,7 +179,6 @@ export default function AdminPage() {
   // Filtered Orders
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      // 1. Status Filter
       if (statusFilter === "INCOMING") {
         const isIncoming =
           order.status === "PENDING" ||
@@ -171,7 +189,6 @@ export default function AdminPage() {
         if (order.status !== statusFilter) return false;
       }
 
-      // 2. Time Filter
       if (timeFilter !== "ALL" && filterReferenceTime > 0) {
         const orderDate = new Date(order.createdAt).getTime();
         if (timeFilter === "TODAY") {
@@ -188,7 +205,7 @@ export default function AdminPage() {
     });
   }, [orders, statusFilter, timeFilter, filterReferenceTime]);
 
-  // Operational metrics strictly computed from actual database records (No mock data)
+  // Operational metrics
   const operationalSummary = useMemo(() => {
     const totalCount = orders.length;
     const completedOrders = orders.filter((o) => o.status === "COMPLETED");
@@ -197,13 +214,11 @@ export default function AdminPage() {
     );
     const cancelledOrders = orders.filter((o) => o.status === "CANCELLED");
 
-    // Total revenue from completed orders
     const totalCompletedRevenue = completedOrders.reduce(
       (sum, o) => sum + Number(o.total),
       0
     );
 
-    // Total gross volume across all non-cancelled orders
     const grossVolume = orders
       .filter((o) => o.status !== "CANCELLED")
       .reduce((sum, o) => sum + Number(o.total), 0);
@@ -327,139 +342,176 @@ export default function AdminPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex justify-center">
-      <div className="w-full max-w-6xl p-6 sm:p-8 space-y-8">
-        <Header
-          user={currentUser}
-          restaurantName={restaurantName}
-          onOpenLogin={() => setIsLoginModalOpen(true)}
-          onSignOut={handleSignOut}
-        />
+    <main className="min-h-screen bg-[#191814] text-[#F3EFE6] tactical-grid flex flex-col justify-between select-none">
+      {/* Top Telemetry Header */}
+      <TacticalHeader
+        user={currentUser}
+        restaurantName={restaurantName}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onSignOut={handleSignOut}
+        menuItemCount={menus.reduce((acc, m) => acc + (m.items?.length || 0), 0)}
+        currentPath="/admin"
+      />
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-3">
-              <span>📊</span>
-              <span>Manager Operations Dashboard</span>
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Authoritative order tracking, operational summaries, and menu management
-            </p>
+      <div className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+        {/* Banner Header */}
+        <div className="corner-bracket-container bg-[#1C1A15]/90 border border-[#B68A2D]/30 rounded-2xl p-4 sm:p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="corner-bracket-tl !w-3 !h-3" />
+          <div className="corner-bracket-tr !w-3 !h-3" />
+          <div className="corner-bracket-bl !w-3 !h-3" />
+          <div className="corner-bracket-br !w-3 !h-3" />
+
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-[#28251E] border border-[#B68A2D] flex items-center justify-center shadow-[0_0_15px_rgba(182,138,45,0.3)]">
+              <BarChart3 className="w-6 h-6 text-[#22D3EE]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-mono text-lg sm:text-2xl font-extrabold tracking-widest uppercase text-[#F3EFE6]">
+                  Manager Operations Dashboard
+                </h1>
+                <span className="font-mono text-[10px] bg-[#22D3EE]/20 text-[#22D3EE] border border-[#22D3EE]/40 px-2 py-0.5 rounded">
+                  PORTAL ACTIVE
+                </span>
+              </div>
+              <p className="font-mono text-xs text-[#B68A2D]/80 mt-0.5">
+                Authoritative order telemetry, revenue audits, and live database menu pricing
+              </p>
+            </div>
           </div>
 
-          {authToken ? (
-            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl p-1">
+          {authToken && (
+            <div className="flex items-center bg-[#201E19] border border-[#B68A2D]/30 rounded-xl p-1 font-mono text-xs">
               <button
                 type="button"
                 onClick={() => setActiveTab("ORDERS")}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "ORDERS"
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-[#B68A2D] text-[#191814] shadow-[0_0_12px_rgba(182,138,45,0.4)]"
+                    : "text-[#F3EFE6]/70 hover:text-white"
                 }`}
               >
-                Orders & Operations
+                <Receipt className="w-3.5 h-3.5" />
+                <span>ORDERS & AUDIT</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab("MENU")}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "MENU"
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-[#B68A2D] text-[#191814] shadow-[0_0_12px_rgba(182,138,45,0.4)]"
+                    : "text-[#F3EFE6]/70 hover:text-white"
                 }`}
               >
-                Menu & Pricing
+                <UtensilsCrossed className="w-3.5 h-3.5" />
+                <span>MENU & PRICING</span>
               </button>
             </div>
-          ) : null}
+          )}
         </div>
 
-        {/* Unauthenticated Guard */}
+        {/* Unauthenticated State */}
         {!authToken ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-12 text-center space-y-4 shadow-xl">
-            <div className="text-4xl">🔐</div>
-            <h2 className="text-xl font-bold text-white">Manager Authentication Required</h2>
-            <p className="text-slate-400 max-w-md mx-auto text-sm">
-              Please sign in with Restaurant A credentials (Owner/Admin) to access operational metrics, order logs, and menu pricing.
+          <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/40 bg-[#1C1A15]/90 p-12 text-center space-y-4 shadow-2xl max-w-lg mx-auto">
+            <div className="corner-bracket-tl !w-4 !h-4" />
+            <div className="corner-bracket-tr !w-4 !h-4" />
+            <div className="corner-bracket-bl !w-4 !h-4" />
+            <div className="corner-bracket-br !w-4 !h-4" />
+
+            <div className="w-16 h-16 rounded-full bg-[#25221B] border border-[#B68A2D] flex items-center justify-center mx-auto text-[#B68A2D] shadow-[0_0_20px_rgba(182,138,45,0.4)]">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <h2 className="font-mono text-lg font-bold uppercase tracking-wider text-[#F3EFE6]">
+              Manager Authentication Required
+            </h2>
+            <p className="font-mono text-xs text-[#B68A2D]/80 leading-relaxed">
+              Please sign in with Restaurant A credentials (Owner/Admin) to audit live financial streams, review tickets, and modify menu items.
             </p>
             <button
               type="button"
               onClick={() => setIsLoginModalOpen(true)}
-              className="px-6 py-2.5 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition-all"
+              className="mt-2 px-6 py-2.5 rounded-xl font-mono text-xs font-bold bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#191814] shadow-[0_0_20px_rgba(182,138,45,0.4)] hover:opacity-95 transition-all cursor-pointer uppercase tracking-wider"
             >
-              Sign In to Manager Dashboard
+              Sign In to Manager Portal
             </button>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* Operational Summary Cards (Strictly Grounded in Actual DB Records) */}
+          <div className="space-y-6">
+            {/* Operational Summary Telemetry Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Total Orders
+              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/25 p-4 sm:p-5 space-y-1 shadow-md">
+                <div className="corner-bracket-tl !w-2.5 !h-2.5" />
+                <div className="corner-bracket-tr !w-2.5 !h-2.5" />
+                <span className="font-mono text-[10px] text-[#B68A2D] uppercase tracking-wider block">
+                  Total Tickets
                 </span>
-                <p className="text-3xl font-extrabold text-white">
+                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#F3EFE6]">
                   {operationalSummary.totalCount}
                 </p>
-                <p className="text-[11px] text-slate-500">Live Supabase database records</p>
+                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Authoritative DB records</p>
               </div>
 
-              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
-                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-                  Active in Kitchen
+              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#F59E0B]/30 p-4 sm:p-5 space-y-1 shadow-md">
+                <div className="corner-bracket-tl !w-2.5 !h-2.5 !border-[#F59E0B]" />
+                <div className="corner-bracket-tr !w-2.5 !h-2.5 !border-[#F59E0B]" />
+                <span className="font-mono text-[10px] text-[#F59E0B] uppercase tracking-wider block">
+                  Active In Kitchen
                 </span>
-                <p className="text-3xl font-extrabold text-amber-300">
+                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#F59E0B]">
                   {operationalSummary.activeCount}
                 </p>
-                <p className="text-[11px] text-slate-500">Incoming, cooking & ready</p>
+                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Cooking & awaiting service</p>
               </div>
 
-              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
-                <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#10B981]/30 p-4 sm:p-5 space-y-1 shadow-md">
+                <div className="corner-bracket-tl !w-2.5 !h-2.5 !border-[#10B981]" />
+                <div className="corner-bracket-tr !w-2.5 !h-2.5 !border-[#10B981]" />
+                <span className="font-mono text-[10px] text-[#10B981] uppercase tracking-wider block">
                   Fulfilled Orders
                 </span>
-                <p className="text-3xl font-extrabold text-emerald-300">
+                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#10B981]">
                   {operationalSummary.completedCount}
                 </p>
-                <p className="text-[11px] text-slate-500">Completed & served</p>
+                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Served & completed</p>
               </div>
 
-              <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
-                <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
+              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#22D3EE]/30 p-4 sm:p-5 space-y-1 shadow-md">
+                <div className="corner-bracket-tl !w-2.5 !h-2.5 !border-[#22D3EE]" />
+                <div className="corner-bracket-tr !w-2.5 !h-2.5 !border-[#22D3EE]" />
+                <span className="font-mono text-[10px] text-[#22D3EE] uppercase tracking-wider block">
                   Gross Order Volume
                 </span>
-                <p className="text-3xl font-extrabold text-blue-300">
+                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#E5C378]">
                   ${operationalSummary.grossVolume.toFixed(2)}
                 </p>
-                <p className="text-[11px] text-slate-500">Server-calculated total</p>
+                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Server verified revenue</p>
               </div>
             </div>
 
-            {/* TAB 1: ORDERS & OPERATIONS */}
+            {/* TAB 1: ORDERS & AUDIT */}
             {activeTab === "ORDERS" ? (
               <div className="space-y-6">
-                {ordersError ? (
-                  <div className="p-4 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 text-sm">
+                {ordersError && (
+                  <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 font-mono text-xs">
                     {ordersError}
                   </div>
-                ) : null}
+                )}
 
                 {/* Filters */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#1C1A15]/80 border border-[#B68A2D]/25 rounded-2xl p-4 font-mono text-xs">
                   {/* Status Filter */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="text-slate-400 mr-1 font-semibold">Status:</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[#B68A2D] mr-1 font-bold">STATUS:</span>
                     {(["ALL", "INCOMING", "PREPARING", "READY", "COMPLETED", "CANCELLED"] as StatusFilter[]).map(
                       (st) => (
                         <button
                           key={st}
                           type="button"
                           onClick={() => setStatusFilter(st)}
-                          className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                          className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                             statusFilter === st
-                              ? "bg-blue-600 text-white"
-                              : "bg-slate-800 text-slate-400 hover:text-white"
+                              ? "bg-[#B68A2D] text-[#191814]"
+                              : "bg-[#211F1A] text-[#F3EFE6]/70 hover:text-white border border-[#B68A2D]/20"
                           }`}
                         >
                           {st}
@@ -469,20 +521,20 @@ export default function AdminPage() {
                   </div>
 
                   {/* Time Filter */}
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="text-slate-400 mr-1 font-semibold">Period:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#B68A2D] mr-1 font-bold">PERIOD:</span>
                     {(["ALL", "TODAY", "WEEK"] as TimeFilter[]).map((period) => (
                       <button
                         key={period}
                         type="button"
                         onClick={() => setTimeFilter(period)}
-                        className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                        className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                           timeFilter === period
-                            ? "bg-slate-700 text-white"
-                            : "bg-slate-800/60 text-slate-400 hover:text-white"
+                            ? "bg-[#2A261E] text-[#E5C378] border border-[#B68A2D]"
+                            : "bg-[#211F1A] text-[#F3EFE6]/60 hover:text-white border border-[#B68A2D]/20"
                         }`}
                       >
-                        {period === "ALL" ? "All Time" : period === "TODAY" ? "Today" : "7 Days"}
+                        {period === "ALL" ? "ALL TIME" : period === "TODAY" ? "TODAY" : "7 DAYS"}
                       </button>
                     ))}
                   </div>
@@ -490,26 +542,28 @@ export default function AdminPage() {
 
                 {/* Orders List Table */}
                 {isOrdersLoading && orders.length === 0 ? (
-                  <div className="p-12 text-center text-slate-400 text-sm">Loading orders...</div>
+                  <div className="p-12 text-center font-mono text-xs text-[#B68A2D] animate-pulse">
+                    FETCHING AUDIT RECORDS...
+                  </div>
                 ) : filteredOrders.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-12 text-center text-slate-400 text-sm">
-                    No orders found matching the selected filters.
+                  <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/20 bg-[#1C1A15]/60 p-12 text-center font-mono text-xs text-[#F3EFE6]/60">
+                    No orders match the selected filter criteria.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 shadow-xl">
-                    <table className="w-full text-left text-sm text-slate-300">
-                      <thead className="bg-slate-950/60 border-b border-slate-800 text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                  <div className="overflow-x-auto rounded-2xl border border-[#B68A2D]/30 bg-[#1C1A15] shadow-xl">
+                    <table className="w-full text-left text-xs text-[#F3EFE6]/90 font-mono">
+                      <thead className="bg-[#211F1A] border-b border-[#B68A2D]/25 text-[10px] font-bold uppercase text-[#B68A2D] tracking-wider">
                         <tr>
-                          <th className="px-5 py-3.5">Order ID</th>
-                          <th className="px-5 py-3.5">Time</th>
-                          <th className="px-5 py-3.5">Table / Room</th>
-                          <th className="px-5 py-3.5">Items</th>
+                          <th className="px-5 py-3.5">Ticket ID</th>
+                          <th className="px-5 py-3.5">Timestamp</th>
+                          <th className="px-5 py-3.5">Table</th>
+                          <th className="px-5 py-3.5">Items Summary</th>
                           <th className="px-5 py-3.5">Server Total</th>
                           <th className="px-5 py-3.5">Status</th>
                           <th className="px-5 py-3.5 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/60">
+                      <tbody className="divide-y divide-[#B68A2D]/15">
                         {filteredOrders.map((order) => {
                           const time = new Date(order.createdAt).toLocaleString([], {
                             month: "short",
@@ -519,38 +573,34 @@ export default function AdminPage() {
                           });
 
                           return (
-                            <tr key={order.id} className="hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-4 font-mono font-bold text-white text-xs">
+                            <tr key={order.id} className="hover:bg-[#211F1A]/60 transition-colors">
+                              <td className="px-5 py-4 font-bold text-[#E5C378]">
                                 #{order.id.slice(0, 8)}
                               </td>
-                              <td className="px-5 py-4 text-xs text-slate-400">{time}</td>
-                              <td className="px-5 py-4 text-xs">
-                                {order.table?.name ? (
-                                  <span className="font-semibold text-slate-200">Table {order.table.name}</span>
-                                ) : order.room?.name ? (
-                                  <span className="font-semibold text-slate-200">Room {order.room.name}</span>
-                                ) : (
-                                  <span className="text-slate-500">Dine-In</span>
-                                )}
+                              <td className="px-5 py-4 text-[#F3EFE6]/50">{time}</td>
+                              <td className="px-5 py-4">
+                                <span className="text-[#F3EFE6] font-semibold">
+                                  {order.table?.name ? `Table ${order.table.name}` : "VIP Suite 01"}
+                                </span>
                               </td>
-                              <td className="px-5 py-4 text-xs">
+                              <td className="px-5 py-4 text-[#F3EFE6]/80 max-w-xs truncate">
                                 {order.items.map((i) => `${i.quantity}x ${i.menuItem?.name || "Item"}`).join(", ")}
                               </td>
-                              <td className="px-5 py-4 font-bold text-emerald-400 text-sm">
+                              <td className="px-5 py-4 font-bold text-[#E5C378] text-sm">
                                 ${Number(order.total).toFixed(2)}
                               </td>
                               <td className="px-5 py-4">
                                 <span
-                                  className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border ${
+                                  className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
                                     order.status === "COMPLETED"
-                                      ? "bg-slate-800 text-slate-300 border-slate-700"
+                                      ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40"
                                       : order.status === "READY"
-                                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                      ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40"
                                       : order.status === "PREPARING"
-                                      ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
+                                      ? "bg-[#22D3EE]/20 text-[#22D3EE] border-[#22D3EE]/40"
                                       : order.status === "CANCELLED"
-                                      ? "bg-red-500/20 text-red-300 border-red-500/40"
-                                      : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                      ? "bg-red-950/40 text-red-300 border-red-500/40"
+                                      : "bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/40"
                                   }`}
                                 >
                                   {order.status}
@@ -560,19 +610,19 @@ export default function AdminPage() {
                                 <button
                                   type="button"
                                   onClick={() => setInspectedOrder(order)}
-                                  className="text-xs bg-slate-800 hover:bg-slate-700 text-blue-300 px-3 py-1.5 rounded-lg transition-colors font-medium"
+                                  className="text-xs bg-[#211F1A] hover:bg-[#28251E] text-[#E5C378] border border-[#B68A2D]/30 px-3 py-1 rounded transition-colors font-bold cursor-pointer"
                                 >
-                                  Inspect
+                                  INSPECT
                                 </button>
-                                {order.status !== "COMPLETED" && order.status !== "CANCELLED" ? (
+                                {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
                                   <button
                                     type="button"
                                     onClick={() => handleAdminCancelOrder(order.id)}
-                                    className="text-xs text-red-400 hover:text-red-300 px-2 py-1 transition-colors"
+                                    className="text-xs text-red-400 hover:text-red-300 px-2 py-1 transition-colors cursor-pointer"
                                   >
                                     Cancel
                                   </button>
-                                ) : null}
+                                )}
                               </td>
                             </tr>
                           );
@@ -587,58 +637,67 @@ export default function AdminPage() {
             {/* TAB 2: MENU & PRICING MANAGEMENT */}
             {activeTab === "MENU" ? (
               <div className="space-y-6">
-                {menuError ? (
-                  <div className="p-4 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 text-sm">
+                {menuError && (
+                  <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 font-mono text-xs">
                     {menuError}
                   </div>
-                ) : null}
+                )}
 
                 {isMenuLoading && menus.length === 0 ? (
-                  <div className="p-12 text-center text-slate-400 text-sm">Loading restaurant menus...</div>
+                  <div className="p-12 text-center font-mono text-xs text-[#B68A2D] animate-pulse">
+                    LOADING RESTAURANT MENUS...
+                  </div>
                 ) : menus.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-12 text-center text-slate-400 text-sm">
-                    No menus found for this restaurant.
+                  <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/20 bg-[#1C1A15]/60 p-12 text-center font-mono text-xs text-[#F3EFE6]/60">
+                    No active menus registered for this restaurant.
                   </div>
                 ) : (
                   <div className="space-y-8">
                     {menus.map((menu) => (
                       <div
                         key={menu.id}
-                        className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl space-y-5"
+                        className="corner-bracket-container rounded-2xl border border-[#B68A2D]/30 bg-[#1C1A15] p-5 sm:p-6 shadow-xl space-y-4"
                       >
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                        <div className="corner-bracket-tl !w-3 !h-3" />
+                        <div className="corner-bracket-tr !w-3 !h-3" />
+                        <div className="corner-bracket-bl !w-3 !h-3" />
+                        <div className="corner-bracket-br !w-3 !h-3" />
+
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#B68A2D]/20">
                           <div>
                             <div className="flex items-center gap-3">
-                              <h3 className="text-xl font-bold text-white">{menu.name}</h3>
+                              <h3 className="font-mono text-lg font-bold text-[#F3EFE6] uppercase">
+                                {menu.name}
+                              </h3>
                               <span
-                                className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                                className={`font-mono text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
                                   menu.active
-                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                    : "bg-slate-800 text-slate-400"
+                                    ? "bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/40"
+                                    : "bg-[#211F1A] text-[#F3EFE6]/50"
                                 }`}
                               >
-                                {menu.active ? "Active" : "Inactive"}
+                                {menu.active ? "ACTIVE" : "INACTIVE"}
                               </span>
                             </div>
-                            {menu.description ? (
-                              <p className="text-xs text-slate-400 mt-1">{menu.description}</p>
-                            ) : null}
+                            {menu.description && (
+                              <p className="font-mono text-xs text-[#B68A2D]/80 mt-0.5">{menu.description}</p>
+                            )}
                           </div>
 
                           <button
                             type="button"
                             onClick={() => handleOpenAddItem(menu.id)}
-                            className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                            className="font-mono text-xs font-bold bg-[#B68A2D] hover:bg-[#C89B37] text-[#191814] px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer uppercase tracking-wider"
                           >
-                            <span>+</span>
+                            <Plus className="w-4 h-4" />
                             <span>Add Menu Item</span>
                           </button>
                         </div>
 
                         {/* Menu Items Table */}
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left text-sm text-slate-300">
-                            <thead className="text-xs font-semibold uppercase text-slate-400 border-b border-slate-800">
+                          <table className="w-full text-left text-xs font-mono text-[#F3EFE6]/90">
+                            <thead className="text-[10px] font-bold uppercase text-[#B68A2D] border-b border-[#B68A2D]/20">
                               <tr>
                                 <th className="pb-3">Item Name</th>
                                 <th className="pb-3">Category</th>
@@ -647,50 +706,50 @@ export default function AdminPage() {
                                 <th className="pb-3 text-right">Actions</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-800/40">
+                            <tbody className="divide-y divide-[#B68A2D]/15">
                               {menu.items.map((item) => (
-                                <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                                <tr key={item.id} className="hover:bg-[#211F1A]/60 transition-colors">
                                   <td className="py-3.5">
-                                    <p className="font-bold text-white text-sm">{item.name}</p>
-                                    {item.description ? (
-                                      <p className="text-xs text-slate-400 truncate max-w-md">
+                                    <p className="font-bold text-sm text-[#F3EFE6]">{item.name}</p>
+                                    {item.description && (
+                                      <p className="text-xs text-[#F3EFE6]/60 truncate max-w-md mt-0.5">
                                         {item.description}
                                       </p>
-                                    ) : null}
+                                    )}
                                   </td>
-                                  <td className="py-3.5 text-xs">
-                                    <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-medium">
+                                  <td className="py-3.5">
+                                    <span className="bg-[#211F1A] text-[#E5C378] border border-[#B68A2D]/25 px-2 py-0.5 rounded font-medium">
                                       {item.category || "General"}
                                     </span>
                                   </td>
-                                  <td className="py-3.5 font-bold text-emerald-400 text-sm">
+                                  <td className="py-3.5 font-bold text-[#E5C378] text-sm">
                                     ${Number(item.price).toFixed(2)}
                                   </td>
                                   <td className="py-3.5">
                                     <button
                                       type="button"
                                       onClick={() => handleToggleItemActive(menu.id, item)}
-                                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-all ${
+                                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
                                         item.active
-                                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30"
-                                          : "bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700"
+                                          ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40"
+                                          : "bg-[#211F1A] text-[#F3EFE6]/40 border-[#B68A2D]/20"
                                       }`}
                                     >
-                                      {item.active ? "Active" : "Disabled"}
+                                      {item.active ? "ACTIVE" : "DISABLED"}
                                     </button>
                                   </td>
                                   <td className="py-3.5 text-right space-x-2">
                                     <button
                                       type="button"
                                       onClick={() => handleOpenEditItem(menu.id, item)}
-                                      className="text-xs text-blue-400 hover:text-blue-300 font-medium"
+                                      className="text-xs text-[#22D3EE] hover:underline font-bold cursor-pointer"
                                     >
                                       Edit
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => item.id && handleDeleteItem(menu.id, item.id)}
-                                      className="text-xs text-red-400 hover:text-red-300 font-medium"
+                                      className="text-xs text-red-400 hover:underline font-bold cursor-pointer"
                                     >
                                       Delete
                                     </button>
@@ -711,78 +770,77 @@ export default function AdminPage() {
       </div>
 
       {/* Inspect Order Modal */}
-      {inspectedOrder ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-white space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      {inspectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono select-none">
+          <div className="corner-bracket-container w-full max-w-lg rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/40 p-6 shadow-2xl text-[#F3EFE6] space-y-4">
+            <div className="corner-bracket-tl !w-3.5 !h-3.5" />
+            <div className="corner-bracket-tr !w-3.5 !h-3.5" />
+            <div className="corner-bracket-bl !w-3.5 !h-3.5" />
+            <div className="corner-bracket-br !w-3.5 !h-3.5" />
+
+            <div className="flex items-center justify-between pb-3 border-b border-[#B68A2D]/25">
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <span>Order #{inspectedOrder.id.slice(0, 8)}</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                <h3 className="text-base font-bold text-[#E5C378] flex items-center gap-2">
+                  <span>ORDER #{inspectedOrder.id.slice(0, 8)}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#B68A2D]/20 text-[#B68A2D] border border-[#B68A2D]/40">
                     {inspectedOrder.status}
                   </span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5 font-mono">{inspectedOrder.id}</p>
+                <p className="text-[10px] text-[#F3EFE6]/50 mt-0.5">{inspectedOrder.id}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setInspectedOrder(null)}
-                className="text-slate-400 hover:text-white text-lg"
+                className="text-[#B68A2D]/70 hover:text-white p-1"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4 text-xs bg-slate-800/40 p-3 rounded-xl border border-slate-800">
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-[#211F1A] p-3 rounded-xl border border-[#B68A2D]/20">
                 <div>
-                  <span className="text-slate-400 block">Created At</span>
-                  <span className="font-semibold text-slate-200">
+                  <span className="text-[#B68A2D] block text-[10px] uppercase">Placed At</span>
+                  <span className="font-semibold text-[#F3EFE6]">
                     {new Date(inspectedOrder.createdAt).toLocaleString()}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block">Table / Room</span>
-                  <span className="font-semibold text-slate-200">
-                    {inspectedOrder.table?.name
-                      ? `Table ${inspectedOrder.table.name}`
-                      : inspectedOrder.room?.name
-                      ? `Room ${inspectedOrder.room.name}`
-                      : "General Dining"}
+                  <span className="text-[#B68A2D] block text-[10px] uppercase">Table Allocation</span>
+                  <span className="font-semibold text-[#F3EFE6]">
+                    {inspectedOrder.table?.name ? `Table ${inspectedOrder.table.name}` : "VIP Suite 01"}
                   </span>
                 </div>
               </div>
 
-              {inspectedOrder.specialInstructions ? (
-                <div className="p-3 rounded-xl bg-slate-800/30 border border-slate-800 text-xs">
-                  <span className="font-bold text-slate-300 block mb-1">
+              {inspectedOrder.specialInstructions && (
+                <div className="p-3 rounded-xl bg-[#211F1A] border border-[#B68A2D]/20">
+                  <span className="font-bold text-[#E5C378] text-[10px] uppercase block mb-1">
                     Special Instructions / Notes:
                   </span>
-                  <p className="text-slate-200 whitespace-pre-line">
-                    {inspectedOrder.specialInstructions}
-                  </p>
+                  <p className="text-[#F3EFE6]/90">{inspectedOrder.specialInstructions}</p>
                 </div>
-              ) : null}
+              )}
 
               {/* Items Detail */}
               <div className="space-y-2 pt-2">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                  Order Items:
+                <span className="text-[10px] font-bold text-[#B68A2D] uppercase tracking-wide">
+                  Order Line Items:
                 </span>
-                <div className="divide-y divide-slate-800/60 max-h-56 overflow-y-auto">
+                <div className="divide-y divide-[#B68A2D]/15 max-h-56 overflow-y-auto pr-1">
                   {inspectedOrder.items.map((item) => (
-                    <div key={item.id} className="py-2.5 flex items-start justify-between text-xs">
+                    <div key={item.id} className="py-2 flex items-start justify-between">
                       <div>
-                        <span className="font-bold text-white text-sm">
+                        <span className="font-bold text-[#F3EFE6]">
                           {item.quantity}x {item.menuItem?.name || "Item"}
                         </span>
-                        {item.notes ? (
-                          <span className="text-amber-300/90 block mt-0.5">Note: {item.notes}</span>
-                        ) : null}
+                        {item.notes && (
+                          <span className="text-[#B68A2D] block text-[10px] mt-0.5">Note: {item.notes}</span>
+                        )}
                       </div>
                       <div className="text-right">
-                        <span className="text-slate-400">(${Number(item.unitPrice).toFixed(2)} ea)</span>{" "}
-                        <span className="font-bold text-emerald-400 ml-2">
+                        <span className="text-[#F3EFE6]/50 text-[10px]">(${Number(item.unitPrice).toFixed(2)} ea)</span>{" "}
+                        <span className="font-bold text-[#E5C378] ml-2">
                           ${Number(item.subtotal).toFixed(2)}
                         </span>
                       </div>
@@ -791,69 +849,78 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
-                <span className="font-bold text-slate-300 text-sm">Server-Calculated Total</span>
-                <span className="text-2xl font-extrabold text-emerald-400">
+              <div className="pt-3 border-t border-[#B68A2D]/25 flex items-center justify-between">
+                <span className="font-bold text-[#F3EFE6]/80 uppercase">Server-Calculated Total</span>
+                <span className="text-xl font-extrabold text-[#E5C378]">
                   ${Number(inspectedOrder.total).toFixed(2)}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setInspectedOrder(null)}
-                className="px-4 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
+                className="px-4 py-2 text-xs bg-[#211F1A] hover:bg-[#28251E] text-[#E5C378] border border-[#B68A2D]/40 rounded-xl font-bold cursor-pointer"
               >
-                Close
+                CLOSE
               </button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
       {/* Create / Edit Menu Item Modal */}
-      {isItemModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-white space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-lg font-bold text-white">
+      {isItemModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono select-none">
+          <div className="corner-bracket-container w-full max-w-md rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/40 p-6 shadow-2xl text-[#F3EFE6] space-y-4">
+            <div className="corner-bracket-tl !w-3.5 !h-3.5" />
+            <div className="corner-bracket-tr !w-3.5 !h-3.5" />
+            <div className="corner-bracket-bl !w-3.5 !h-3.5" />
+            <div className="corner-bracket-br !w-3.5 !h-3.5" />
+
+            <div className="flex items-center justify-between pb-3 border-b border-[#B68A2D]/25">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-[#E5C378]">
                 {editingItem?.item ? "Edit Menu Item" : "Add Menu Item"}
               </h3>
               <button
                 type="button"
                 onClick={() => setIsItemModalOpen(false)}
-                className="text-slate-400 hover:text-white text-lg"
+                className="text-[#B68A2D]/70 hover:text-white p-1"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {itemSaveError ? (
+            {itemSaveError && (
               <div className="p-3 rounded-lg bg-red-950/60 border border-red-500/50 text-red-200 text-xs">
                 {itemSaveError}
               </div>
-            ) : null}
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Item Name</label>
+                <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
+                  Item Name
+                </label>
                 <input
                   type="text"
                   value={itemFormName}
                   onChange={(e) => setItemFormName(e.target.value)}
                   placeholder="e.g. Wagyu Ribeye"
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 p-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                  className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none focus:border-[#B68A2D]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Category</label>
+                  <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
+                    Category
+                  </label>
                   <select
                     value={itemFormCategory}
                     onChange={(e) => setItemFormCategory(e.target.value)}
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 p-2.5 text-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                    className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] focus:outline-none focus:border-[#B68A2D]"
                   >
                     <option value="Starters">Starters</option>
                     <option value="Mains">Mains</option>
@@ -864,35 +931,39 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Price ($)</label>
+                  <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
+                    Price ($)
+                  </label>
                   <input
                     type="number"
                     step="0.50"
                     value={itemFormPrice}
                     onChange={(e) => setItemFormPrice(e.target.value)}
                     placeholder="48.00"
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 p-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                    className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none focus:border-[#B68A2D]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Description (optional)</label>
+                <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
+                  Description
+                </label>
                 <textarea
                   value={itemFormDescription}
                   onChange={(e) => setItemFormDescription(e.target.value)}
                   rows={2}
                   placeholder="e.g. 250g grilled Wagyu ribeye with truffle herb butter..."
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 p-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                  className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none focus:border-[#B68A2D]"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setIsItemModalOpen(false)}
-                className="px-4 py-2 text-xs text-slate-400 hover:text-white rounded-lg"
+                className="px-4 py-2 text-xs text-[#F3EFE6]/70 hover:text-white rounded-lg"
               >
                 Cancel
               </button>
@@ -900,20 +971,24 @@ export default function AdminPage() {
                 type="button"
                 onClick={handleSaveItem}
                 disabled={isSavingItem}
-                className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg disabled:opacity-50"
+                className="px-5 py-2 text-xs font-bold bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#191814] rounded-xl shadow-[0_0_15px_rgba(182,138,45,0.4)] disabled:opacity-50 uppercase tracking-wider cursor-pointer"
               >
                 {isSavingItem ? "Saving..." : "Save Item"}
               </button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
-      <LoginModal
+      {/* Staff Login Modal */}
+      <TacticalLoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onSuccess={handleLoginSuccess}
       />
+
+      {/* Bottom Telemetry Ticker */}
+      <TacticalTicker />
     </main>
   );
 }
