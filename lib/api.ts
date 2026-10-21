@@ -167,14 +167,18 @@ export async function getMenu(token?: string): Promise<MenuItem[]> {
  */
 export async function submitOrder(
   payload: CreateOrderPayload,
-  token: string
+  token?: string
 ): Promise<PersistedOrder> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}/order`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -190,11 +194,14 @@ export async function submitOrder(
 /**
  * Retrieve recent orders for the authenticated restaurant.
  */
-export async function getOrders(token: string): Promise<PersistedOrder[]> {
+export async function getOrders(token?: string): Promise<PersistedOrder[]> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}/order`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     cache: "no-store",
   });
 
@@ -238,15 +245,19 @@ export async function parseOrder(order: string, token?: string): Promise<ParsedO
 export async function updateOrderStatus(
   orderId: string,
   status: string,
-  token: string,
+  token?: string,
   reason?: string
 ): Promise<PersistedOrder> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}/order/${orderId}/status`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify({ status, reason }),
   });
 
@@ -263,12 +274,15 @@ export async function updateOrderStatus(
  */
 export async function getOrderById(
   orderId: string,
-  token: string
+  token?: string
 ): Promise<PersistedOrder> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}/order/${orderId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     cache: "no-store",
   });
 

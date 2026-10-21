@@ -232,6 +232,56 @@ assert(multiGreetingOrder.items.find((i) => i.name === "Caesar Salad")?.quantity
 assert(multiGreetingOrder.items.find((i) => i.name === "Flat White")?.quantity === 1, "1x Flat White matched");
 assert(multiGreetingOrder.total === 2 * 18 + 5.5, `Total is exactly $${2 * 18 + 5.5}0 ($41.50)`);
 
+// 13. Conversational "also can you add...", phonetic speech variants, direct names & confirmation
+console.log("\n--- 13. Conversational Orders, Phonetic Speech Variants & Voice Confirmation ---");
+
+// Test: "also, can you add beef carpaccio?"
+const beefCarpaccioRes = matchOrderFromTranscript(
+  "also, can you add beef carpaccio?",
+  sampleMenu
+);
+assert(beefCarpaccioRes.items.length === 1, "'also, can you add beef carpaccio?' matches 1 item");
+assert(beefCarpaccioRes.items[0]?.name === "Beef Carpaccio", "Item is Beef Carpaccio");
+assert(beefCarpaccioRes.items[0]?.price === 19, "Price is $19.00");
+assert((beefCarpaccioRes.unmatchedPhrases?.length ?? 0) === 0, "Zero unmatched phrases for beef carpaccio");
+
+// Test: "also, can you add a bench here at salmon?" (phonetic speech-to-text transcript)
+const salmonAcousticRes = matchOrderFromTranscript(
+  "also, can you add a bench here at salmon?",
+  sampleMenu
+);
+assert(salmonAcousticRes.items.length === 1, "'also, can you add a bench here at salmon?' matches 1 item");
+assert(salmonAcousticRes.items[0]?.name === "Pan-Seared Salmon", "Item is Pan-Seared Salmon");
+assert(salmonAcousticRes.items[0]?.price === 32, "Price is $32.00");
+
+// Test: "Wagyu rebeye" and "banky repay" accent variations
+const wagyuRebeyeRes = matchOrderFromTranscript("Wagyu rebeye", sampleMenu);
+assert(wagyuRebeyeRes.items.length === 1, "'Wagyu rebeye' matches Wagyu Ribeye");
+assert(wagyuRebeyeRes.items[0]?.name === "Wagyu Ribeye", "Item is Wagyu Ribeye");
+
+const bankyRepayRes = matchOrderFromTranscript("banky repay", sampleMenu);
+assert(bankyRepayRes.items.length === 1, "'banky repay' phonetic variation matches Wagyu Ribeye");
+assert(bankyRepayRes.items[0]?.name === "Wagyu Ribeye", "Item is Wagyu Ribeye");
+
+// Test: "can you add salmon"
+const salmonRes = matchOrderFromTranscript("can you add salmon", sampleMenu);
+assert(salmonRes.items.length === 1, "'can you add salmon' matches Pan-Seared Salmon");
+assert(salmonRes.items[0]?.name === "Pan-Seared Salmon", "Item is Pan-Seared Salmon");
+
+// Test: Direct dish name "Pan-Seared Salmon"
+const directSalmonRes = matchOrderFromTranscript("Pan-Seared Salmon", sampleMenu);
+assert(directSalmonRes.items.length === 1, "'Pan-Seared Salmon' matches 1 item");
+assert(directSalmonRes.items[0]?.name === "Pan-Seared Salmon", "Item is Pan-Seared Salmon");
+
+// Test: Voice Confirmation Detection
+import { isVoiceConfirmation } from "./orderMatcher";
+assert(isVoiceConfirmation("Confirmed") === true, "Identifies 'Confirmed' as voice confirmation");
+assert(isVoiceConfirmation("confirm the order") === true, "Identifies 'confirm the order' as voice confirmation");
+assert(isVoiceConfirmation("Send it to Order") === true, "Identifies 'Send it to Order' as voice confirmation");
+assert(isVoiceConfirmation("Send to kitchen") === true, "Identifies 'Send to kitchen' as voice confirmation");
+assert(isVoiceConfirmation("Place order") === true, "Identifies 'Place order' as voice confirmation");
+assert(isVoiceConfirmation("I want more fries") === false, "Regular order is not voice confirmation");
+
 console.log("\n=======================================================");
 console.log(`TOTAL MATCHER TESTS : ${total}`);
 console.log(`PASSED              : ${passed}`);
@@ -241,4 +291,5 @@ console.log("=======================================================\n");
 if (failed > 0) {
   process.exit(1);
 }
+
 

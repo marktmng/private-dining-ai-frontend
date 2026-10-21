@@ -45,19 +45,77 @@ const QUANTITY_WORDS: Record<string, number> = {
 
 // Known common aliases / colloquial names for menu items
 const MENU_ALIASES: Record<string, string[]> = {
-  "wagyu ribeye": ["wagyu rib eye", "wagyu steak", "wagyu", "ribeye", "rib eye"],
-  "eye fillet": ["eye filet", "beef fillet", "beef tenderloin"],
-  "pan-seared salmon": ["pan seared salmon", "salmon fillet", "seared salmon", "salmon", "king salmon"],
-  "truffle mushroom risotto": ["truffle risotto", "mushroom risotto", "truffle mushroom risotto"],
-  "wild mushroom risotto": ["mushroom risotto", "wild risotto"],
-  "beef carpaccio": ["beef capaccio", "carpaccio"],
-  "caesar salad": ["caesar", "cesar salad", "caesar salad"],
+  "wagyu ribeye": [
+    "wagyu rib eye",
+    "wagyu steak",
+    "wagyu",
+    "ribeye",
+    "rib eye",
+    "wagyu beef",
+    "wagyu rebeye",
+    "wagu ribeye",
+    "wagu rebeye",
+    "wagy ribeye",
+    "wagy rebeye",
+    "wagi ribeye",
+    "wagi rebeye",
+    "wagyu rib",
+    "wagyu rebye",
+    "banky repay",
+    "banky ribeye",
+    "banky rebeye",
+    "bank repay",
+    "wanky repay",
+    "wank repay",
+  ],
+  "eye fillet": [
+    "eye filet",
+    "beef fillet",
+    "beef tenderloin",
+    "eye fillete",
+    "i fillet",
+    "i filet",
+  ],
+  "pan seared salmon": [
+    "pan-seared salmon",
+    "pan seared salmon",
+    "salmon fillet",
+    "seared salmon",
+    "salmon",
+    "king salmon",
+    "bench here at salmon",
+    "bench here salmon",
+    "bench seared salmon",
+    "pan seared",
+    "pan-seared",
+    "seared salmon fillet",
+    "salmon steak",
+  ],
+  "truffle mushroom risotto": [
+    "truffle risotto",
+    "mushroom risotto",
+    "truffle mushroom risotto",
+    "wild mushroom risotto",
+    "mushroom risotto",
+    "risotto",
+    "truffle mushroom",
+  ],
+  "wild mushroom risotto": ["mushroom risotto", "wild risotto", "risotto"],
+  "beef carpaccio": [
+    "beef capaccio",
+    "carpaccio",
+    "beef carpacio",
+    "beef carpaco",
+    "beef carpatchio",
+    "carpacio",
+  ],
+  "caesar salad": ["caesar", "cesar salad", "caesar salad", "ceaser salad"],
   "burrata salad": ["buratta salad", "burrata"],
-  "french fries": ["fries", "chips", "french fry"],
-  "chocolate fondant": ["fondant", "molten chocolate", "chocolate cake"],
-  "creme brulee": ["cream brulee", "creme brule", "crème brûlée"],
+  "french fries": ["fries", "chips", "french fry", "potato fries", "crispy fries"],
+  "chocolate fondant": ["fondant", "molten chocolate", "chocolate cake", "molten fondant", "chocolate lava"],
+  "creme brulee": ["cream brulee", "creme brule", "crème brûlée", "crem brulee"],
   "flat white": ["white coffee", "flat white coffee", "coffee"],
-  "sparkling water": ["mineral water", "sparkling mineral water", "sparkling bottle"],
+  "sparkling water": ["mineral water", "sparkling mineral water", "sparkling bottle", "bottle of sparkling water", "sparkling"],
   "espresso martini": ["espresso cocktail"],
   "old fashioned": ["old fashion"],
   "soup of the day": ["today's soup", "daily soup"],
@@ -85,19 +143,35 @@ export function normalizeText(value: string): string {
 }
 
 /**
+ * Detects if user speech commands order confirmation / dispatch to kitchen.
+ */
+export function isVoiceConfirmation(text: string): boolean {
+  if (!text) return false;
+  const norm = normalizeText(text);
+  const confirmPatterns = [
+    /\b(?:confirm|confirmed|confirm the order|confirm order|confirmation)\b/,
+    /\b(?:send it to order|send to order|send it to kitchen|send to kitchen|send order to kitchen|send to the kitchen|send it to the kitchen)\b/,
+    /\b(?:place order|place the order|submit order|submit the order|dispatch order|dispatch to kitchen)\b/,
+    /\b(?:that's all send it|that is all send it|we're ready to order|ready to order|order is ready)\b/,
+    /\b(?:finalize order|finalize the order|transmit order|transmit to kitchen)\b/,
+  ];
+  return confirmPatterns.some((pattern) => pattern.test(norm));
+}
+
+/**
  * Strips conversational preambles/greetings and trailing politeness phrases.
  */
 export function cleanSpeechUtterance(text: string): string {
   if (!text) return "";
   let cleaned = text.trim();
 
-  // Strip leading greetings and conversational fillers (e.g. "Halo.", "Hello,", "Hey", "Excuse me")
+  // Strip leading greetings, conjunctions, and conversational fillers
   cleaned = cleaned.replace(
-    /^(?:halo|hallo|hello|hi|hey|hiya|good evening|good morning|good afternoon|excuse me|um|uh|er|ah|ok|okay|so|please)[,\s.]+/i,
+    /^(?:also|and|so|well|now|actually|halo|hallo|hello|hi|hey|hiya|good evening|good morning|good afternoon|excuse me|um|uh|er|ah|ok|okay|please|oh)[,\s.]+/i,
     ""
   );
 
-  // Iteratively strip trailing polite phrases or closing statements (e.g. "please", "that's all", "thank you")
+  // Iteratively strip trailing polite phrases or closing statements
   const trailingRegex =
     /[,\s.]+(?:please|thanks|thank you|that'?s all|that is all|that'?s it|that is it|for now|that will be all|that'll be all|too|as well)[.?!]*$/i;
   while (trailingRegex.test(cleaned)) {
@@ -108,20 +182,60 @@ export function cleanSpeechUtterance(text: string): string {
 }
 
 /**
- * Checks if user speech contains explicit order intent.
+ * Comprehensive order prefix pattern to strip speech ordering wrappers.
  */
-export function hasExplicitOrderIntent(text: string): boolean {
+export const ORDER_PREFIX_PATTERN =
+  /^(?:(?:also|and|so|please|now|hey|actually)?\s*(?:can you add|could you add|can we add|could we add|can you please add|can you get me|can you get us|can you bring|could you bring|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|i'll have|i will have|i'd like to add|i'd like to get|i'd like|i would like to add|i would like|i want to add|i want|we want|we'd like|we would like|we'll have|we will have|we'll take|i'll take|let's get|let's have|put me down for|please bring|bring me|bring us|give me|give us|to add|add|order)\s+(?:an?|the|some)?|(?:an?|the)\s+)/i;
+
+/**
+ * Checks if user speech contains explicit order intent or mentions a menu item.
+ */
+export function hasExplicitOrderIntent(text: string, menu?: MenuItem[]): boolean {
   const cleaned = cleanSpeechUtterance(text);
   const norm = normalizeText(cleaned);
 
+  // Check confirmation commands (these are command triggers, not item additions)
+  if (isVoiceConfirmation(norm)) {
+    return false;
+  }
+
   const intentPatterns = [
     /\b(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have)\b/,
-    /\b(?:please bring|bring me|give me|add|order|we'll have|we will have|we'd like|we would like)\b/,
+    /\b(?:can you add|could you add|can we add|could we add|please bring|bring me|bring us|give me|add|order|we'll have|we will have|we'd like|we would like|we'll take|i'll take)\b/,
     /\b(?:put me down for|i want to order|i want|we want)\b/,
     /^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+[a-z]/i,
   ];
 
-  return intentPatterns.some((p) => p.test(norm));
+  if (intentPatterns.some((p) => p.test(norm))) {
+    return true;
+  }
+
+  // If the speech phrase mentions any menu item or known alias directly, it is a valid order!
+  if (menu && menu.length > 0) {
+    // If the text contains recommendation/suggestion phrasing (e.g. from AI assistant), it's not customer ordering
+    if (/\b(?:recommends?|suggests?|suggestion|specials? for tonight)\b/i.test(norm)) {
+      return false;
+    }
+
+    for (const item of menu) {
+      const normItem = normalizeText(item.name);
+      const regex = new RegExp(`(?:^|\\s)${normItem.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}(?:$|\\s)`, "i");
+      if (regex.test(norm)) {
+        return true;
+      }
+      const aliases = MENU_ALIASES[normItem] || [];
+      for (const a of aliases) {
+        const normAlias = normalizeText(a);
+        if (normAlias.length < 3) continue;
+        const aliasRegex = new RegExp(`(?:^|\\s)${normAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}(?:$|\\s)`, "i");
+        if (aliasRegex.test(norm)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -358,11 +472,12 @@ export function findBestMenuMatch(
     const normName = normalizeText(item.name);
     const aliases = MENU_ALIASES[normName] || [];
     for (const alias of aliases) {
-      if (normQuery === normalizeText(alias)) {
+      const normAlias = normalizeText(alias);
+      if (normQuery === normAlias) {
         return { confidence: 0.98, item };
       }
-      if (normQuery.includes(normalizeText(alias)) || normalizeText(alias).includes(normQuery)) {
-        const lenRatio = Math.min(normQuery.length, alias.length) / Math.max(normQuery.length, alias.length);
+      if (normQuery.includes(normAlias) || normAlias.includes(normQuery)) {
+        const lenRatio = Math.min(normQuery.length, normAlias.length) / Math.max(normQuery.length, normAlias.length);
         if (lenRatio >= 0.7) {
           return { confidence: 0.92, item };
         }
@@ -370,7 +485,31 @@ export function findBestMenuMatch(
     }
   }
 
-  // 3. String similarity & token scoring
+  // 3. Subphrase / Contains Match (longest candidate item or alias first)
+  // E.g. "also can you add beef carpaccio" -> contains "beef carpaccio"
+  // E.g. "can you add a bench here at salmon" -> contains "salmon" or "bench here at salmon"
+  let bestSub: { confidence: number; item: MenuItem; len: number } | null = null;
+  for (const item of menu) {
+    const normName = normalizeText(item.name);
+    const candidates = [normName, ...(MENU_ALIASES[normName]?.map(normalizeText) || [])];
+    candidates.sort((a, b) => b.length - a.length);
+
+    for (const cand of candidates) {
+      if (cand.length < 3) continue;
+      // Word boundary regex check
+      const regex = new RegExp(`(?:^|\\s)${cand.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}(?:$|\\s)`, "i");
+      if (regex.test(normQuery)) {
+        if (!bestSub || cand.length > bestSub.len) {
+          bestSub = { item, confidence: 0.95, len: cand.length };
+        }
+      }
+    }
+  }
+  if (bestSub) {
+    return { confidence: bestSub.confidence, item: bestSub.item };
+  }
+
+  // 4. String similarity & token scoring
   let best: { confidence: number; item: MenuItem } | null = null;
 
   for (const item of menu) {
@@ -451,11 +590,28 @@ export function matchOrderFromTranscript(
     };
   }
 
-  // Split transcript into discrete statements by newline, semicolon, 'and', or sentence boundaries
-  const statements = transcript
-    .split(/(?:\r?\n|;|\band\b|(?<!\d)\.(?!\d))+/gi)
+  // 1. Split transcript into major sentence blocks
+  const rawSentences = transcript
+    .split(/(?:\r?\n|;|\.\s+|[?!])+/gi)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+
+  const statements: string[] = [];
+  for (const sentence of rawSentences) {
+    if (
+      /\b(?:(?:the\s+)?chef recommends?|i recommend|we recommend|(?:the\s+)?chef suggests?|i suggest|we suggest|our recommendation)\b/i.test(
+        sentence
+      )
+    ) {
+      continue;
+    }
+    // Split discrete clauses by 'and'
+    const subs = sentence
+      .split(/(?:\band\b)+/gi)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    statements.push(...subs);
+  }
 
   const draftItems = new Map<string, MatchedOrderItem>();
   const needsConfirmationMap = new Map<string, MatchedOrderItem>();
@@ -465,6 +621,11 @@ export function matchOrderFromTranscript(
   for (const rawStatement of statements) {
     const cleanStmt = cleanSpeechUtterance(rawStatement);
     if (!cleanStmt && !rawStatement) continue;
+
+    // Ignore voice confirmation commands from being marked as unmatched food items
+    if (isVoiceConfirmation(cleanStmt) || isVoiceConfirmation(rawStatement)) {
+      continue;
+    }
 
     // 1. Check for cancellation / clear
     if (isCancellationOrClear(cleanStmt) || isCancellationOrClear(rawStatement)) {
@@ -524,7 +685,7 @@ export function matchOrderFromTranscript(
     }
 
     // 5. Must have explicit ordering intent or clear quantity + item structure
-    if (!hasExplicitOrderIntent(rawStatement) && !hasExplicitOrderIntent(cleanStmt)) {
+    if (!hasExplicitOrderIntent(rawStatement, menu) && !hasExplicitOrderIntent(cleanStmt, menu)) {
       // If there's no explicit order intent, do not add random words from casual conversation
       continue;
     }
@@ -537,7 +698,7 @@ export function matchOrderFromTranscript(
     let itemPhrase = cleanedText;
 
     const qtyMatch = cleanedText.match(
-      /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|please bring|bring me|give me|add|order)?\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
+      /^(?:(?:also|and|so|please|now|hey|actually)?\s*(?:can you add|could you add|can we add|could we add|can you please add|can you get me|can you get us|can you bring|could you bring|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|i'll have|i will have|i'd like to add|i'd like to get|i'd like|i would like to add|i would like|i want to add|i want|we want|we'd like|we would like|we'll have|we will have|we'll take|i'll take|let's get|let's have|put me down for|please bring|bring me|bring us|give me|give us|to add|add|order)?\s*)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
     );
 
     if (qtyMatch) {
@@ -548,12 +709,7 @@ export function matchOrderFromTranscript(
       }
     } else {
       // Strip conversational prefixes
-      itemPhrase = cleanedText
-        .replace(
-          /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|please bring|bring me|give me|add|order)\s+/i,
-          ""
-        )
-        .trim();
+      itemPhrase = cleanedText.replace(ORDER_PREFIX_PATTERN, "").trim();
     }
 
     // Strip leading "the", "a", or "an" from item phrase (e.g. "the Wagyu Ribeye" -> "Wagyu Ribeye")
@@ -587,7 +743,7 @@ export function matchOrderFromTranscript(
     // Match against active menu
     const match = findBestMenuMatch(itemPhrase, menu);
     if (!match || match.confidence < 0.75) {
-      if (itemPhrase && itemPhrase.length >= 2) {
+      if (itemPhrase && itemPhrase.length >= 2 && !isVoiceConfirmation(itemPhrase)) {
         unmatchedPhrases.push(itemPhrase);
       }
       continue;

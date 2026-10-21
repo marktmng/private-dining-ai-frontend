@@ -466,7 +466,7 @@ export default function TacticalAssistantPanel({
                     )}
 
                     {/* Action Button */}
-                    {isAuthenticated ? (
+                    <div className="space-y-2">
                       <button
                         type="button"
                         onClick={onSubmitOrder}
@@ -485,31 +485,10 @@ export default function TacticalAssistantPanel({
                           </>
                         )}
                       </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <button
-                          type="button"
-                          onClick={onSubmitOrder}
-                          disabled={isSubmitting}
-                          className="w-full py-3 rounded-xl font-mono text-xs font-bold tracking-wider text-[#191814] bg-gradient-to-r from-[#B68A2D] via-[#E5C378] to-[#B68A2D] hover:opacity-95 transition-all shadow-[0_0_20px_rgba(182,138,45,0.4)] flex items-center justify-center gap-2 cursor-pointer uppercase"
-                        >
-                          {isSubmitting ? (
-                            <>
-                              <span className="w-3.5 h-3.5 border-2 border-[#191814]/30 border-t-[#191814] rounded-full animate-spin" />
-                              <span>SIMULATING TRANSMIT...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Send className="w-4 h-4" />
-                              <span>SIMULATE TRANSMIT TO KITCHEN ({items.length} ITEMS)</span>
-                            </>
-                          )}
-                        </button>
-                        <div className="p-2 rounded-lg bg-[#211F1A] border border-[#B68A2D]/30 text-center font-mono text-[10px] text-[#E5C378]">
-                          💡 Prototype Mode: Live price & quantity math active. Sign in as Restaurant A to sync with live kitchen database.
-                        </div>
+                      <div className="p-2 rounded-lg bg-[#211F1A] border border-[#B68A2D]/30 text-center font-mono text-[10px] text-[#E5C378]">
+                        🎙️ Voice Command: Speak &ldquo;Confirmed&rdquo; or &ldquo;Send it to Order&rdquo; to dispatch automatically.
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </>

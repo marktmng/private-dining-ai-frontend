@@ -109,8 +109,8 @@ export default function AdminPage() {
       });
   }, []);
 
-  // 2. Fetch Orders for authenticated restaurant
-  const fetchOrders = useCallback(async (token: string, silent = false) => {
+  // 2. Fetch Orders for authenticated restaurant or default restaurant
+  const fetchOrders = useCallback(async (token?: string, silent = false) => {
     if (!silent) setIsOrdersLoading(true);
     setOrdersError(null);
     try {
@@ -141,15 +141,16 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!authToken) return;
     queueMicrotask(() => {
-      void fetchOrders(authToken);
-      void fetchMenus(authToken);
+      void fetchOrders(authToken ?? undefined);
+      if (authToken) {
+        void fetchMenus(authToken);
+      }
     });
 
     const interval = setInterval(() => {
-      void fetchOrders(authToken, true);
-    }, 5000);
+      void fetchOrders(authToken ?? undefined, true);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [authToken, fetchOrders, fetchMenus]);

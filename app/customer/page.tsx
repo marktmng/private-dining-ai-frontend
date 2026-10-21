@@ -13,7 +13,11 @@ import TacticalSommelier from "@/components/TacticalSommelier";
 import TacticalTicker from "@/components/TacticalTicker";
 
 import { getMe, getMenu, getOrderById, submitOrder, updateOrderStatus } from "@/lib/api";
-import { matchOrderFromTranscript, type MatchedOrderItem } from "@/lib/orderMatcher";
+import {
+  matchOrderFromTranscript,
+  isVoiceConfirmation,
+  type MatchedOrderItem,
+} from "@/lib/orderMatcher";
 import {
   startRealtimeVoiceSession,
   type RealtimeVoiceSession,
@@ -186,37 +190,18 @@ export default function CustomerPage() {
       setUnmatchedPhrase(null);
     }
 
-    if (match.items.length > 0) {
-      setOrderItems((currentItems) => {
-        const itemMap = new Map<string, MatchedOrderItem>();
-
-        // Keep current items
-        currentItems.forEach((it) => {
-          itemMap.set(it.id, { ...it });
-        });
-
-        // Upsert voice matched items
-        match.items.forEach((mItem) => {
-          const existing = itemMap.get(mItem.id);
-          const unitPrice = Number(mItem.price);
-
-          if (existing) {
-            existing.quantity = Math.max(existing.quantity, mItem.quantity);
-            existing.price = unitPrice;
-            existing.lineTotal = Number((existing.quantity * unitPrice).toFixed(2));
-            if (mItem.notes) existing.notes = mItem.notes;
-          } else {
-            itemMap.set(mItem.id, {
-              ...mItem,
-              price: unitPrice,
-              lineTotal: Number((mItem.quantity * unitPrice).toFixed(2)),
-            });
-          }
-        });
-
-        return Array.from(itemMap.values());
-      });
-    }
+    // Set order items derived directly from the active dialogue
+    setOrderItems((currentManual) => {
+      // If voice recognized items, reconstruct the active order state
+      if (match.items.length > 0) {
+        return match.items.map((mItem) => ({
+          ...mItem,
+          price: Number(mItem.price),
+          lineTotal: Number((mItem.quantity * Number(mItem.price)).toFixed(2)),
+        }));
+      }
+      return currentManual;
+    });
   }, [currentOrder, menu]);
 
   // Calculate 100% authoritative order total
@@ -385,7 +370,7 @@ export default function CustomerPage() {
         id: `btn-${Date.now()}`,
         isFinal: true,
         role: "user",
-        text: `I'd like to add one ${item.name}`,
+        text: `Add one ${item.name}`,
       },
     ]);
 
@@ -440,47 +425,10 @@ export default function CustomerPage() {
     setStatus("Order cleared. Ready for new selections.");
   }, []);
 
-  // Order Submission Handler
+  // Order Submission Handler: Transmits confirmed order directly to PostgreSQL backend
   const handleSubmitConfirmedOrder = useCallback(async () => {
     if (orderItems.length === 0) {
       setSubmitOrderError("No recognized items in order list.");
-      return;
-    }
-
-    if (!authToken) {
-      // Prototype simulation mode: create simulated persisted order so the user can test the full ticket lifecycle
-      setIsSubmittingOrder(true);
-      setSubmitOrderError(null);
-      setTimeout(() => {
-        setIsSubmittingOrder(false);
-        const protoId = `proto-${Date.now().toString(36)}`;
-        setPersistedOrder({
-          id: protoId,
-          restaurantId: "proto-restaurant",
-          status: "SENT_TO_KITCHEN",
-          total: calculatedTotal,
-          specialInstructions: specialInstructions.trim() || null,
-          items: orderItems.map((item, idx) => ({
-            id: `proto-item-${idx}`,
-            orderId: protoId,
-            menuItemId: item.id,
-            quantity: item.quantity,
-            unitPrice: item.price,
-            subtotal: item.lineTotal,
-            notes: item.notes || null,
-            menuItem: {
-              id: item.id,
-              name: item.name,
-              price: item.price,
-            },
-          })),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-        setStatus(
-          `Prototype order #${protoId.slice(0, 8)} simulated & dispatched to kitchen preview! Total: $${calculatedTotal.toFixed(2)}`
-        );
-      }, 500);
       return;
     }
 
@@ -505,12 +453,17 @@ export default function CustomerPage() {
         })),
       };
 
-      const created = await submitOrder(payload, authToken);
+      // Real database submission to PostgreSQL via backend /order endpoint
+      const created = await submitOrder(payload, authToken ?? undefined);
 
       let finalOrder = created;
       try {
-        await updateOrderStatus(created.id, "CONFIRMED", authToken);
-        finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken);
+        if (created.status === "PENDING") {
+          await updateOrderStatus(created.id, "CONFIRMED", authToken ?? undefined);
+          finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken ?? undefined);
+        } else if (created.status === "CONFIRMED") {
+          finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken ?? undefined);
+        }
       } catch (transErr) {
         console.warn("Notice updating order status:", transErr);
       }
@@ -531,7 +484,21 @@ export default function CustomerPage() {
     } finally {
       setIsSubmittingOrder(false);
     }
-  }, [authToken, calculatedTotal, orderItems, specialInstructions, stopListening]);
+  }, [authToken, orderItems, specialInstructions, stopListening]);
+
+  // Hands-free Voice Confirmation ("Confirmed", "Send it to Order", "Send to kitchen", etc.)
+  useEffect(() => {
+    if (orderItems.length === 0 || isSubmittingOrder || persistedOrder) return;
+
+    const lastFinalUserEntry = conversation
+      .filter((e) => e.role === "user" && e.isFinal)
+      .pop();
+
+    if (lastFinalUserEntry && isVoiceConfirmation(lastFinalUserEntry.text)) {
+      setStatus("Voice command detected: Dispatching order to kitchen...");
+      void handleSubmitConfirmedOrder();
+    }
+  }, [conversation, orderItems.length, isSubmittingOrder, persistedOrder, handleSubmitConfirmedOrder]);
 
   const handleResetOrder = useCallback(() => {
     setPersistedOrder(null);
@@ -566,14 +533,14 @@ export default function CustomerPage() {
     }, 4500);
   }, []);
 
-  // Poll live order status
+  // Poll live order status until completed or cancelled
   useEffect(() => {
-    if (!persistedOrder || !authToken) return;
+    if (!persistedOrder) return;
     if (persistedOrder.status === "COMPLETED" || persistedOrder.status === "CANCELLED") return;
 
     const interval = setInterval(async () => {
       try {
-        const latest = await getOrderById(persistedOrder.id, authToken);
+        const latest = await getOrderById(persistedOrder.id, authToken ?? undefined);
         if (latest && latest.status !== persistedOrder.status) {
           setPersistedOrder(latest);
           if (latest.status === "PREPARING") {

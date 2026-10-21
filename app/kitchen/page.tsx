@@ -71,9 +71,9 @@ export default function KitchenPage() {
       });
   }, []);
 
-  // 2. Fetch orders for current authenticated restaurant
+  // 2. Fetch orders for current restaurant (supports both guest view and staff login)
   const fetchOrders = useCallback(
-    async (token: string, silent = false) => {
+    async (token?: string, silent = false) => {
       if (!silent) setIsLoading(true);
       setError(null);
       try {
@@ -90,15 +90,14 @@ export default function KitchenPage() {
   );
 
   useEffect(() => {
-    if (!authToken) return;
     queueMicrotask(() => {
-      void fetchOrders(authToken);
+      void fetchOrders(authToken ?? undefined);
     });
 
-    // Auto-refresh orders every 4 seconds
+    // Auto-refresh orders every 3 seconds
     const interval = setInterval(() => {
-      void fetchOrders(authToken, true);
-    }, 4000);
+      void fetchOrders(authToken ?? undefined, true);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [authToken, fetchOrders]);
