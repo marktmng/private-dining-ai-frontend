@@ -189,8 +189,8 @@ export default function OrderSummary({
             </div>
           ) : null}
 
-          {/* SaaS Order Confirmation & Submission Flow */}
-          {hasItems && isAuthenticated ? (
+          {/* Order Confirmation & Submission Flow */}
+          {hasItems ? (
             <div className="pt-2 border-t border-slate-800 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">
@@ -223,10 +223,6 @@ export default function OrderSummary({
                   </>
                 )}
               </button>
-            </div>
-          ) : hasItems && !isAuthenticated ? (
-            <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-500/30 text-blue-200 text-xs">
-              💡 <span className="font-semibold">Prototype Mode:</span> Orders are calculated locally. Sign in to Restaurant A above to persist live orders to the backend and kitchen.
             </div>
           ) : null}
         </>

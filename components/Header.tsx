@@ -63,23 +63,23 @@ export default function Header({
                 type="button"
                 onClick={onSignOut}
                 className="ml-2 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full px-2.5 py-1 transition-colors"
-                title="Switch to unauthenticated prototype"
+                title="Sign out of staff account"
               >
                 Sign Out
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-full px-4 py-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-              <span className="text-xs text-amber-200 font-medium">
-                Prototype Mode
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-slate-200 font-medium">
+                VIP Suite 01
               </span>
               <button
                 type="button"
                 onClick={onOpenLogin}
-                className="ml-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-full px-3 py-1 transition-colors shadow-sm"
+                className="ml-2 text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-full px-3 py-1 transition-colors shadow-sm"
               >
-                Sign In (Restaurant A)
+                Staff Access
               </button>
             </div>
           )}

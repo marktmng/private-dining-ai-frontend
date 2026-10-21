@@ -19,6 +19,13 @@ export interface OrderMatchResult {
   unmatchedPhrases?: string[];
   spokenTotal: string;
   total: number;
+  hasOrderOperations?: boolean;
+  wasCleared?: boolean;
+  lastAction?: {
+    type: "add" | "remove" | "clear" | "correction";
+    itemName?: string;
+    quantity?: number;
+  };
 }
 
 const QUANTITY_WORDS: Record<string, number> = {
@@ -43,9 +50,23 @@ const QUANTITY_WORDS: Record<string, number> = {
   dozen: 12,
 };
 
-// Known common aliases / colloquial names for menu items
+// Known common aliases / colloquial names for menu items across various English accents
 const MENU_ALIASES: Record<string, string[]> = {
   "wagyu ribeye": [
+    "anything from menu",
+    "anything from the menu",
+    "something from menu",
+    "something from the menu",
+    "chef's special",
+    "chef special",
+    "signature dish",
+    "signature steak",
+    "giveaway",
+    "give away",
+    "give a rib eye",
+    "give a ribeye",
+    "give ribeye",
+    "give me ribeye",
     "wagyu rib eye",
     "wagyu steak",
     "wagyu",
@@ -59,6 +80,9 @@ const MENU_ALIASES: Record<string, string[]> = {
     "wagy rebeye",
     "wagi ribeye",
     "wagi rebeye",
+    "wagu",
+    "rebeye",
+    "repay",
     "wagyu rib",
     "wagyu rebye",
     "banky repay",
@@ -67,18 +91,67 @@ const MENU_ALIASES: Record<string, string[]> = {
     "bank repay",
     "wanky repay",
     "wank repay",
+    "wanky ribeye",
+    "wagyu rib-eye",
+    "the ribeye",
+    "the wagyu",
+    "wagyu cut",
+    "wagyu beef steak",
+    "japanese steak",
+    "japanese beef",
   ],
   "eye fillet": [
+    "i feel it",
+    "can you give me i feel it",
+    "give me i feel it",
+    "eye feel it",
+    "feel it",
+    "i fill it",
+    "eye fill it",
+    "i fell it",
+    "eye fell it",
+    "feel it steak",
+    "fill it steak",
+    "fill it",
+    "the feel it",
+    "the fillet",
+    "the filet",
+    "can you give me eye fillet",
+    "affiliate",
+    "an affiliate",
+    "the affiliate",
+    "a affiliate",
+    "affiliates",
+    "affilate",
+    "affilite",
+    "eye fillet",
     "eye filet",
     "beef fillet",
     "beef tenderloin",
     "eye fillete",
     "i fillet",
     "i filet",
+    "ai fillet",
+    "ai filet",
+    "aye fillet",
+    "aye filet",
+    "high fillet",
+    "hi fillet",
+    "eye fellit",
+    "eye philip",
+    "eye philet",
+    "i-fillet",
+    "tenderloin",
+    "fillet steak",
+    "beef eye fillet",
+    "the eye fillet",
+    "grass fed fillet",
+    "eye-fillet",
   ],
   "pan seared salmon": [
     "pan-seared salmon",
     "pan seared salmon",
+    "pan seared samon",
     "salmon fillet",
     "seared salmon",
     "salmon",
@@ -86,10 +159,19 @@ const MENU_ALIASES: Record<string, string[]> = {
     "bench here at salmon",
     "bench here salmon",
     "bench seared salmon",
+    "pan share at salmon",
+    "pan share salmon",
+    "punch here at salmon",
+    "pen seared salmon",
+    "pan steer salmon",
     "pan seared",
     "pan-seared",
     "seared salmon fillet",
     "salmon steak",
+    "crispy salmon",
+    "crispy skin salmon",
+    "king salmon fillet",
+    "the salmon",
   ],
   "truffle mushroom risotto": [
     "truffle risotto",
@@ -99,6 +181,16 @@ const MENU_ALIASES: Record<string, string[]> = {
     "mushroom risotto",
     "risotto",
     "truffle mushroom",
+    "truffle rise otto",
+    "truffle resotto",
+    "resotto",
+    "resoto",
+    "mushroom risoto",
+    "truffle rice",
+    "mushroom rice",
+    "arborio rice",
+    "black truffle risotto",
+    "the risotto",
   ],
   "wild mushroom risotto": ["mushroom risotto", "wild risotto", "risotto"],
   "beef carpaccio": [
@@ -107,15 +199,85 @@ const MENU_ALIASES: Record<string, string[]> = {
     "beef carpacio",
     "beef carpaco",
     "beef carpatchio",
+    "beef car patchio",
+    "car patchio",
+    "carpatchio",
     "carpacio",
+    "beef carpasho",
+    "raw beef",
+    "the carpaccio",
   ],
-  "caesar salad": ["caesar", "cesar salad", "caesar salad", "ceaser salad"],
+  "caesar salad": [
+    "caesar",
+    "cesar salad",
+    "caesar salad",
+    "ceaser salad",
+    "caeser salad",
+    "seasar salad",
+    "seizer salad",
+    "scissor salad",
+    "seize a salad",
+    "sizer salad",
+    "cesar",
+    "ceaser",
+    "cos salad",
+    "the caesar",
+    "the salad",
+  ],
   "burrata salad": ["buratta salad", "burrata"],
-  "french fries": ["fries", "chips", "french fry", "potato fries", "crispy fries"],
-  "chocolate fondant": ["fondant", "molten chocolate", "chocolate cake", "molten fondant", "chocolate lava"],
+  "french fries": [
+    "fries",
+    "chips",
+    "french fry",
+    "potato fries",
+    "crispy fries",
+    "french fri",
+    "hot chips",
+    "bowl of fries",
+    "side of fries",
+    "the fries",
+  ],
+  "chocolate fondant": [
+    "fondant",
+    "molten chocolate",
+    "chocolate cake",
+    "molten fondant",
+    "chocolate lava",
+    "chocolate lava cake",
+    "molten lava cake",
+    "warm chocolate fondant",
+    "choco fondant",
+    "chocolate fondue",
+    "chocolate fontant",
+    "chocolate foundant",
+    "the fondant",
+  ],
   "creme brulee": ["cream brulee", "creme brule", "crème brûlée", "crem brulee"],
-  "flat white": ["white coffee", "flat white coffee", "coffee"],
-  "sparkling water": ["mineral water", "sparkling mineral water", "sparkling bottle", "bottle of sparkling water", "sparkling"],
+  "flat white": [
+    "white coffee",
+    "flat white coffee",
+    "coffee",
+    "latte",
+    "flight white",
+    "flood white",
+    "flat lite",
+    "flat-white",
+    "cup of coffee",
+    "the flat white",
+  ],
+  "sparkling water": [
+    "mineral water",
+    "sparkling mineral water",
+    "sparkling bottle",
+    "bottle of sparkling water",
+    "sparkling",
+    "san pellegrino",
+    "bubbly water",
+    "soda water",
+    "fizzy water",
+    "carbonated water",
+    "the sparkling water",
+  ],
   "espresso martini": ["espresso cocktail"],
   "old fashioned": ["old fashion"],
   "soup of the day": ["today's soup", "daily soup"],
@@ -144,18 +306,65 @@ export function normalizeText(value: string): string {
 
 /**
  * Detects if user speech commands order confirmation / dispatch to kitchen.
+ * Supports direct affirmative answers ('yes', 'yeah', 'sure', 'confirm', etc.)
  */
 export function isVoiceConfirmation(text: string): boolean {
   if (!text) return false;
   const norm = normalizeText(text);
+
+  // Exact or direct affirmative responses
+  if (
+    /^(?:yes|yeah|yep|sure|yup|ok|okay|alright|correct|definitely|absolutely|go ahead|please do|sounds good|yes please|yes confirm|yes confirm it|yes confirm the order|confirm it|confirm order)$/i.test(
+      norm
+    )
+  ) {
+    return true;
+  }
+
+  // Affirmative with confirmation phrases
   const confirmPatterns = [
-    /\b(?:confirm|confirmed|confirm the order|confirm order|confirmation)\b/,
-    /\b(?:send it to order|send to order|send it to kitchen|send to kitchen|send order to kitchen|send to the kitchen|send it to the kitchen)\b/,
-    /\b(?:place order|place the order|submit order|submit the order|dispatch order|dispatch to kitchen)\b/,
-    /\b(?:that's all send it|that is all send it|we're ready to order|ready to order|order is ready)\b/,
+    /\b(?:yes|yeah|yep|sure|please)\s+(?:confirm|do|send|place|submit|go ahead|prepare)\b/,
+    /\b(?:confirm|confirmed|confirm the order|confirm my order|confirm order|confirmation)\b/,
+    /\b(?:let the chef know|tell the chef|notify the chef|inform the chef|prepare it|prepare the order|have the chef prepare|prepare for us|go ahead and prepare|please prepare|yes prepare)\b/,
+    /\b(?:send it to order|send to order|send it to kitchen|send to kitchen|send order to kitchen|send to the kitchen|send it to the kitchen|send it now|send it)\b/,
+    /\b(?:place order|place the order|submit order|submit the order|dispatch order|dispatch to kitchen|send order)\b/,
+    /\b(?:that's all send it|that is all send it|we're ready to order|ready to order|order is ready|ready for the chef)\b/,
     /\b(?:finalize order|finalize the order|transmit order|transmit to kitchen)\b/,
   ];
   return confirmPatterns.some((pattern) => pattern.test(norm));
+}
+
+/**
+ * Detects conversational meta directives (e.g. "put this on the order list",
+ * "display total amount", "should I confirm") so they are never flagged as unrecognized dishes.
+ */
+export function isMetaDirective(text: string): boolean {
+  if (!text) return false;
+  const norm = normalizeText(text);
+
+  const listDirectives = [
+    /^(?:can you\s+|could you\s+|please\s+)?(?:put|add|include|place|write)\s+(?:this|that|it|item)\s+(?:on|in|to)\s+(?:the\s+|my\s+)?(?:order\s*list|order|ticket|bill|tab)\b/i,
+    /^(?:put|add|include|place|write)\s+(?:on|in|to)\s+(?:the\s+|my\s+)?(?:order\s*list|order|ticket|bill|tab)\b/i,
+    /^(?:this|that|it)\s+(?:on|in|to)\s+(?:the\s+|my\s+)?(?:order\s*list|order|ticket|bill|tab)\b/i,
+    /^(?:on|in|to)\s+(?:the\s+|my\s+)?(?:order\s*list|order|ticket|bill|tab)$/i,
+    /^(?:order\s*list|my\s*order\s*list|the\s*order\s*list)$/i,
+  ];
+
+  const totalDirectives = [
+    /^(?:can you\s+|could you\s+|please\s+)?(?:display|show|calculate|tell me|what is|what's|how much is)\s+(?:the\s+)?(?:total\s*amount|total\s*price|total|bill|amount)\b/i,
+    /^(?:the\s+)?(?:total\s*amount|total\s*price|total)$/i,
+    /^(?:and\s+)?(?:display|show|calculate)\s+(?:the\s+)?(?:total\s*amount|total)\b/i,
+  ];
+
+  const confirmInquiries = [
+    /^(?:before\s+it\s+confirmed|before\s+confirming|should\s+i\s+confirm|can\s+you\s+confirm|shall\s+we\s+confirm|would\s+you\s+like\s+to\s+confirm)\b/i,
+  ];
+
+  return (
+    listDirectives.some((p) => p.test(norm)) ||
+    totalDirectives.some((p) => p.test(norm)) ||
+    confirmInquiries.some((p) => p.test(norm))
+  );
 }
 
 /**
@@ -182,10 +391,10 @@ export function cleanSpeechUtterance(text: string): string {
 }
 
 /**
- * Comprehensive order prefix pattern to strip speech ordering wrappers.
+ * Comprehensive order prefix pattern to strip speech ordering wrappers with strict word boundaries.
  */
 export const ORDER_PREFIX_PATTERN =
-  /^(?:(?:also|and|so|please|now|hey|actually)?\s*(?:can you add|could you add|can we add|could we add|can you please add|can you get me|can you get us|can you bring|could you bring|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|i'll have|i will have|i'd like to add|i'd like to get|i'd like|i would like to add|i would like|i want to add|i want|we want|we'd like|we would like|we'll have|we will have|we'll take|i'll take|let's get|let's have|put me down for|please bring|bring me|bring us|give me|give us|to add|add|order)\s+(?:an?|the|some)?|(?:an?|the)\s+)/i;
+  /^(?:(?:also|and|so|please|now|hey|actually|hello|hi)?\s*(?:(?:can|could|may|would|will)\s+(?:you|we|i)\s+(?:please\s+)?(?:give|get|bring|serve|prepare|make|provide|add|send)\s+(?:me|us)?|(?:can|could|may)\s+(?:i|we)\s+(?:please\s+)?(?:have|get|take|order|add)|(?:i'll|i\s+will|we'll|we\s+will)\s+(?:have|take|get|order)|(?:i'd|i\s+would|we'd|we\s+would)\s+(?:like\s+(?:to\s+(?:have|get|take|order|add)\s+)?|love\s+(?:to\s+(?:have|get|take|order)\s+)?)|(?:i|we)\s+(?:want|need)\s+(?:to\s+(?:order|have|get|add)\s+)?|(?:please\s+)?(?:give|bring|serve|prepare|make|send|add|order)\s+(?:me|us)?|(?:let's\s+(?:have|get|order))|(?:put\s+(?:me|us)\s+down\s+for))\s+(?:\b(?:an?|the|some)\b\s+)?|^(?:(?:can you add|could you add|can we add|could we add|can you please add|can you get me|can you get us|can you give me|can you give us|could you give me|could you give us|can you bring|could you bring|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|i'll have|i will have|i'd like to add|i'd like to get|i'd like|i would like to add|i would like|i want to add|i want|we want|we'd like|we would like|we'll have|we will have|we'll take|i'll take|let's get|let's have|put me down for|please bring|bring me|bring us|give me|give us|to add|add|order)\s+(?:\b(?:an?|the|some)\b\s+)?|(?:\b(?:an?|the)\b)\s+))/i;
 
 /**
  * Checks if user speech contains explicit order intent or mentions a menu item.
@@ -194,14 +403,15 @@ export function hasExplicitOrderIntent(text: string, menu?: MenuItem[]): boolean
   const cleaned = cleanSpeechUtterance(text);
   const norm = normalizeText(cleaned);
 
-  // Check confirmation commands (these are command triggers, not item additions)
-  if (isVoiceConfirmation(norm)) {
+  // Check confirmation commands or meta directives
+  if (isVoiceConfirmation(norm) || isMetaDirective(norm)) {
     return false;
   }
 
   const intentPatterns = [
+    /\b(?:can you give me|could you give me|can you give us|could you give us|can you get me|can you get us|can you bring me|can you bring us|give me|give us)\b/,
     /\b(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have)\b/,
-    /\b(?:can you add|could you add|can we add|could we add|please bring|bring me|bring us|give me|add|order|we'll have|we will have|we'd like|we would like|we'll take|i'll take)\b/,
+    /\b(?:can you add|could you add|can we add|could we add|please bring|bring me|bring us|add|order|we'll have|we will have|we'd like|we would like|we'll take|i'll take)\b/,
     /\b(?:put me down for|i want to order|i want|we want)\b/,
     /^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+[a-z]/i,
   ];
@@ -212,7 +422,6 @@ export function hasExplicitOrderIntent(text: string, menu?: MenuItem[]): boolean
 
   // If the speech phrase mentions any menu item or known alias directly, it is a valid order!
   if (menu && menu.length > 0) {
-    // If the text contains recommendation/suggestion phrasing (e.g. from AI assistant), it's not customer ordering
     if (/\b(?:recommends?|suggests?|suggestion|specials? for tonight)\b/i.test(norm)) {
       return false;
     }
@@ -246,6 +455,7 @@ export function isQuestionOrInquiry(text: string): boolean {
   if (!norm) return false;
 
   const inquiryTriggers = [
+    /\b(where is|where are|where's|where can i find|where do you have|where)\b/,
     /\b(what is|what's|what are|what do you have|what drinks|what food)\b/,
     /\b(how much is|how much are|how much does|how much for|price of|cost of)\b/,
     /\b(do you have|do you serve|do you offer|do you make)\b/,
@@ -274,18 +484,13 @@ export function isQuestionOrInquiry(text: string): boolean {
  */
 export function isCancellationOrClear(text: string): boolean {
   const norm = normalizeText(text);
-  const clearCommands = [
-    "cancel order",
-    "clear order",
-    "delete order",
-    "empty order",
-    "remove everything",
-    "cancel everything",
-    "start again",
-    "start over",
-    "reset order",
-  ];
-  return clearCommands.some((cmd) => norm.includes(cmd));
+  if (!norm) return false;
+
+  return (
+    /\b(?:clear|cancel|delete|empty|remove|reset|wipe|scratch)\s+(?:the\s+|my\s+|our\s+|this\s+)?(?:order|cart|items?|everything|all(?:\s+items?)?|selection)\b/i.test(norm) ||
+    /\b(?:start\s+(?:over|again)|reset\s+everything|empty\s+(?:the\s+)?cart|clear\s+(?:the\s+)?cart)\b/i.test(norm) ||
+    /^(?:clear(?:\s+order)?|cancel(?:\s+order)?|reset(?:\s+order)?|start\s+over)$/i.test(norm)
+  );
 }
 
 /**
@@ -304,7 +509,7 @@ export function parseWordQuantity(val: string | undefined): number | undefined {
 export function extractNotes(text: string): { notes?: string; cleanedText: string } {
   let cleaned = text;
   const notesMatch = text.match(
-    /\b(rare|medium rare|medium well|medium|well done|no onions?|no dairy|no ice|gluten free|extra spicy|dressing on the side|on the rocks|with ice|extra sauce)\b/i
+    /\b(rare|medium rare|medium well|medium|well done|blue rare|gluten free|dairy free|nut free|vegan|vegetarian|no onions?|no garlic|no dairy|no butter|dressing on the side|sauce on the side|extra sauce|extra spicy|mild|no ice|on the rocks|with ice)\b/i
   );
   if (notesMatch) {
     const notes = notesMatch[0].trim();
@@ -325,7 +530,6 @@ export function parseCorrection(text: string): {
   itemHint?: string;
 } {
   const norm = normalizeText(text);
-  // Strip leading filler words
   const cleaned = norm.replace(/^(?:actually|please|oh|wait|so|hey|hi)\s+/i, "").trim();
 
   // Pattern 1: "[make that/change to] [qty] [optional item] not/instead of [rejectedQty]"
@@ -379,7 +583,6 @@ export function parseCorrection(text: string): {
   return { isCorrection: false };
 }
 
-
 /**
  * Detects negative statements / item removals:
  * "I don't want fries", "No fries", "Without fries", "Cancel the salad", "Remove wagyu"
@@ -387,28 +590,71 @@ export function parseCorrection(text: string): {
 export function parseRemovalOrNegation(
   text: string,
   menu: MenuItem[]
-): { isRemoval: boolean; matchedItem?: MenuItem; quantityToRemove?: number } {
+): {
+  isRemoval: boolean;
+  matchedItem?: MenuItem;
+  quantityToRemove?: number;
+  removeAll?: boolean;
+} {
   const norm = normalizeText(text);
+  if (!norm) return { isRemoval: false };
 
-  const negationPatterns = [
-    /\b(?:i\s+)?(?:don't|dont|do not)\s+want\s+(?:any\s+|the\s+|an?\s+)?([a-z\s]+)/i,
-    /\b(?:no|without|not)\s+(?:any\s+|the\s+|an?\s+)?([a-z\s]+)/i,
-    /\b(?:cancel|remove|delete|drop|take off)\s+(?:the\s+|an?\s+)?([a-z\s]+)/i,
-    /\b([a-z\s]+)\s+(?:no thank you|no thanks|actually no|not that)\b/i,
+  // Don't treat whole order cancellations as single item removal
+  if (isCancellationOrClear(norm)) {
+    return { isRemoval: false };
+  }
+
+  // 1. Action verbs: "remove [qty] [dish]", "delete [qty] [dish]", "take off [qty] [dish]", etc.
+  const actionPattern =
+    /\b(?:remove|delete|cancel|drop|take\s+off|take\s+away|scratch|cut|exclude)\s+(?:the\s+|an?\s+)?(?:all\s+)?(?:(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair)\s+)?(?:orders?\s+of\s+|portions?\s+of\s+)?([a-z\s]+)/i;
+
+  // 2. "I don't want [qty] [dish]", "don't need [qty] [dish]"
+  const dontWantPattern =
+    /\b(?:i\s+)?(?:don't|dont|do not)\s+(?:want|need)\s+(?:any\s+|the\s+|an?\s+)?(?:all\s+)?(?:(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?([a-z\s]+)/i;
+
+  // 3. "no [qty] [dish]", "actually no [qty] [dish]", "without [dish]"
+  const noPattern =
+    /\b(?:actually\s+no|no\s+more|no|without|not)\s+(?:the\s+|an?\s+)?(?:(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?([a-z\s]+)/i;
+
+  // 4. "[dish] no thank you", "[dish] actually no", "[dish] instead"
+  const suffixPattern =
+    /\b([a-z\s]+)\s+(?:no thank you|no thanks|actually no|not that|instead|remove that)\b/i;
+
+  const patterns = [
+    { regex: actionPattern, qtyIndex: 1, dishIndex: 2 },
+    { regex: dontWantPattern, qtyIndex: 1, dishIndex: 2 },
+    { regex: noPattern, qtyIndex: 1, dishIndex: 2 },
+    { regex: suffixPattern, qtyIndex: -1, dishIndex: 1 },
   ];
 
-  for (const pattern of negationPatterns) {
-    const match = norm.match(pattern);
+  for (const { regex, qtyIndex, dishIndex } of patterns) {
+    const match = norm.match(regex);
     if (match) {
-      const phrase = match[1]
-        .replace(/\b(thanks|thank you|please|for me)\b/gi, "")
+      const rawDish = match[dishIndex] || "";
+      const cleanedDish = rawDish
+        .replace(/\b(thanks|thank you|please|for me|from the order|from my order|from order|off the order|off my order|to the order)\b/gi, "")
         .trim();
-      const matchResult = findBestMenuMatch(phrase, menu);
-      if (matchResult && matchResult.confidence >= 0.72) {
+
+      if (!cleanedDish || cleanedDish.length < 2) continue;
+
+      const matchResult = findBestMenuMatch(cleanedDish, menu);
+      if (matchResult && matchResult.confidence >= 0.7) {
+        let quantityToRemove: number | undefined = undefined;
+        let removeAll = false;
+
+        if (qtyIndex > 0 && match[qtyIndex]) {
+          quantityToRemove = parseWordQuantity(match[qtyIndex]);
+        }
+
+        if (/\ball\b/i.test(match[0]) || !quantityToRemove) {
+          removeAll = true;
+        }
+
         return {
           isRemoval: true,
           matchedItem: matchResult.item,
-          quantityToRemove: 1,
+          quantityToRemove: quantityToRemove ?? 1,
+          removeAll,
         };
       }
     }
@@ -416,8 +662,6 @@ export function parseRemovalOrNegation(
 
   return { isRemoval: false };
 }
-
-
 
 /**
  * Check if a word/query is a known ambiguous generic term matching multiple items.
@@ -427,11 +671,25 @@ export function checkAmbiguity(
   menu: MenuItem[]
 ): { isAmbiguous: boolean; candidates: MenuItem[] } {
   const normQuery = normalizeText(query);
+  if (!normQuery) return { isAmbiguous: false, candidates: [] };
+
+  // If query is an exact dish name or direct alias, it is NOT ambiguous
+  const exact = menu.find((m) => normalizeText(m.name) === normQuery);
+  if (exact) {
+    return { isAmbiguous: false, candidates: [] };
+  }
+  for (const item of menu) {
+    const normName = normalizeText(item.name);
+    const aliases = MENU_ALIASES[normName] || [];
+    if (aliases.some((a) => normalizeText(a) === normQuery)) {
+      return { isAmbiguous: false, candidates: [] };
+    }
+  }
+
   const words = normQuery.split(" ").filter((w) => w.length > 2);
 
   for (const word of words) {
     if (AMBIGUOUS_KEYWORDS[word]) {
-      // Find matching items currently in active menu
       const matchingItems = menu.filter((item) => {
         const normName = normalizeText(item.name);
         return (
@@ -449,6 +707,23 @@ export function checkAmbiguity(
   }
 
   return { isAmbiguous: false, candidates: [] };
+}
+
+export function phoneticKey(value: string): string {
+  if (!value) return "";
+  return normalizeText(value)
+    .replace(/ph/g, "f")
+    .replace(/\bkn/g, "n")
+    .replace(/\bwr/g, "r")
+    .replace(/\beye\b/g, "i")
+    .replace(/\baye\b/g, "i")
+    .replace(/\bai\b/g, "i")
+    .replace(/ee+/g, "i")
+    .replace(/ea/g, "i")
+    .replace(/oo+/g, "u")
+    .replace(/(.)\1+/g, "$1") // collapse double letters (ll -> l, tt -> t, etc.)
+    .replace(/e\b/g, "") // strip trailing silent e
+    .trim();
 }
 
 /**
@@ -486,8 +761,6 @@ export function findBestMenuMatch(
   }
 
   // 3. Subphrase / Contains Match (longest candidate item or alias first)
-  // E.g. "also can you add beef carpaccio" -> contains "beef carpaccio"
-  // E.g. "can you add a bench here at salmon" -> contains "salmon" or "bench here at salmon"
   let bestSub: { confidence: number; item: MenuItem; len: number } | null = null;
   for (const item of menu) {
     const normName = normalizeText(item.name);
@@ -496,7 +769,6 @@ export function findBestMenuMatch(
 
     for (const cand of candidates) {
       if (cand.length < 3) continue;
-      // Word boundary regex check
       const regex = new RegExp(`(?:^|\\s)${cand.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}(?:$|\\s)`, "i");
       if (regex.test(normQuery)) {
         if (!bestSub || cand.length > bestSub.len) {
@@ -509,6 +781,25 @@ export function findBestMenuMatch(
     return { confidence: bestSub.confidence, item: bestSub.item };
   }
 
+  // 3.5 Phonetic Accent Normalization Match (matches any accent pronunciation)
+  const phonQuery = phoneticKey(phrase);
+  if (phonQuery && phonQuery.length >= 3) {
+    for (const item of menu) {
+      const normName = normalizeText(item.name);
+      const phonName = phoneticKey(item.name);
+      if (phonQuery === phonName || calculateSimilarity(phonQuery, phonName) >= 0.85) {
+        return { confidence: 0.94, item };
+      }
+      const aliases = MENU_ALIASES[normName] || [];
+      for (const alias of aliases) {
+        const phonAlias = phoneticKey(alias);
+        if (phonQuery === phonAlias || calculateSimilarity(phonQuery, phonAlias) >= 0.85) {
+          return { confidence: 0.94, item };
+        }
+      }
+    }
+  }
+
   // 4. String similarity & token scoring
   let best: { confidence: number; item: MenuItem } | null = null;
 
@@ -519,7 +810,6 @@ export function findBestMenuMatch(
       return { confidence: 1.0, item };
     }
 
-    // Levenshtein & token match
     const sim = calculateSimilarity(normQuery, normItemName);
     const queryTokens = normQuery.split(" ").filter((w) => w.length > 2);
     const itemTokens = normItemName.split(" ").filter((w) => w.length > 2);
@@ -618,12 +908,27 @@ export function matchOrderFromTranscript(
   const unmatchedPhrases: string[] = [];
   let lastOrderedItemId: string | null = null;
 
+  let hasOrderOperations = false;
+  let wasCleared = false;
+  let lastAction:
+    | {
+        type: "add" | "remove" | "clear" | "correction";
+        itemName?: string;
+        quantity?: number;
+      }
+    | undefined = undefined;
+
   for (const rawStatement of statements) {
     const cleanStmt = cleanSpeechUtterance(rawStatement);
     if (!cleanStmt && !rawStatement) continue;
 
-    // Ignore voice confirmation commands from being marked as unmatched food items
+    // Ignore voice confirmation commands from being marked as food items
     if (isVoiceConfirmation(cleanStmt) || isVoiceConfirmation(rawStatement)) {
+      continue;
+    }
+
+    // Ignore meta directives (e.g. "put this on the order list", "display total amount")
+    if (isMetaDirective(cleanStmt) || isMetaDirective(rawStatement)) {
       continue;
     }
 
@@ -633,11 +938,13 @@ export function matchOrderFromTranscript(
       needsConfirmationMap.clear();
       unmatchedPhrases.length = 0;
       lastOrderedItemId = null;
+      hasOrderOperations = true;
+      wasCleared = true;
+      lastAction = { type: "clear" };
       continue;
     }
 
     // 2. Check for Inquiry / Question (e.g. "Do you have sparkling water?")
-    // Inquiries MUST NEVER add or modify draft items!
     if (isQuestionOrInquiry(cleanStmt) || isQuestionOrInquiry(rawStatement)) {
       continue;
     }
@@ -659,6 +966,12 @@ export function matchOrderFromTranscript(
       }
 
       if (targetItem) {
+        hasOrderOperations = true;
+        lastAction = {
+          type: "correction",
+          itemName: targetItem.name,
+          quantity: correction.targetQuantity,
+        };
         targetItem.quantity = correction.targetQuantity;
         targetItem.lineTotal = Number((targetItem.quantity * targetItem.price).toFixed(2));
         if (targetItem.quantity <= 0) {
@@ -668,37 +981,59 @@ export function matchOrderFromTranscript(
       continue;
     }
 
-    // 4. Check for Removal / Negation (e.g. "I don't want fries", "no fries")
-    const removal = parseRemovalOrNegation(cleanStmt, menu);
+    // 4. Check for Removal / Negation (e.g. "remove the eye fillet", "I don't want fries", "delete wagyu")
+    const removal = parseRemovalOrNegation(cleanStmt, menu) || parseRemovalOrNegation(rawStatement, menu);
     if (removal.isRemoval && removal.matchedItem) {
+      hasOrderOperations = true;
       const key = removal.matchedItem.id || removal.matchedItem.name;
-      const existing = draftItems.get(key);
-      if (existing) {
-        existing.quantity -= removal.quantityToRemove || 1;
-        existing.lineTotal = Number((existing.quantity * existing.price).toFixed(2));
-        if (existing.quantity <= 0) {
-          draftItems.delete(key);
+      let foundKey: string | null = draftItems.has(key) ? key : null;
+      let existing = foundKey ? draftItems.get(foundKey) : undefined;
+      if (!existing) {
+        for (const [k, v] of draftItems.entries()) {
+          if (v.name.toLowerCase() === removal.matchedItem.name.toLowerCase()) {
+            foundKey = k;
+            existing = v;
+            break;
+          }
         }
       }
-      // If item was not in the draft, doing nothing is correct. Never add it!
+
+      if (existing && foundKey) {
+        lastAction = {
+          type: "remove",
+          itemName: existing.name,
+          quantity: removal.quantityToRemove,
+        };
+        if (removal.removeAll || removal.quantityToRemove === undefined) {
+          draftItems.delete(foundKey);
+        } else {
+          existing.quantity -= removal.quantityToRemove;
+          existing.lineTotal = Number((existing.quantity * existing.price).toFixed(2));
+          if (existing.quantity <= 0) {
+            draftItems.delete(foundKey);
+          }
+        }
+      }
       continue;
     }
 
     // 5. Must have explicit ordering intent or clear quantity + item structure
     if (!hasExplicitOrderIntent(rawStatement, menu) && !hasExplicitOrderIntent(cleanStmt, menu)) {
-      // If there's no explicit order intent, do not add random words from casual conversation
       continue;
     }
 
     // 6. Extract quantity, cooking preferences, and menu item phrase
     const { notes, cleanedText } = extractNotes(cleanStmt);
 
-    // Extract leading quantity
-    let quantity = 1;
-    let itemPhrase = cleanedText;
+    // Strip conversational / ordering prefixes first (e.g. "can I have", "i'd like to order")
+    let phraseAfterPrefix = cleanedText.replace(ORDER_PREFIX_PATTERN, "").trim();
 
-    const qtyMatch = cleanedText.match(
-      /^(?:(?:also|and|so|please|now|hey|actually)?\s*(?:can you add|could you add|can we add|could we add|can you please add|can you get me|can you get us|can you bring|could you bring|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|i'll have|i will have|i'd like to add|i'd like to get|i'd like|i would like to add|i would like|i want to add|i want|we want|we'd like|we would like|we'll have|we will have|we'll take|i'll take|let's get|let's have|put me down for|please bring|bring me|bring us|give me|give us|to add|add|order)?\s*)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
+    // Extract quantity from the stripped phrase
+    let quantity = 1;
+    let itemPhrase = phraseAfterPrefix;
+
+    const qtyMatch = phraseAfterPrefix.match(
+      /^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
     );
 
     if (qtyMatch) {
@@ -707,16 +1042,61 @@ export function matchOrderFromTranscript(
         quantity = parsedQty;
         itemPhrase = qtyMatch[2].trim();
       }
-    } else {
-      // Strip conversational prefixes
-      itemPhrase = cleanedText.replace(ORDER_PREFIX_PATTERN, "").trim();
     }
 
-    // Strip leading "the", "a", or "an" from item phrase (e.g. "the Wagyu Ribeye" -> "Wagyu Ribeye")
-    itemPhrase = itemPhrase.replace(/^(?:the|an?)\s+/i, "").trim();
+    // Strip standalone leading article "the", "a", or "an"
+    itemPhrase = itemPhrase.replace(/^(?:the|an?)\b\s+/i, "").trim();
 
-    // Clean any trailing filler again from itemPhrase
+    // Clean trailing filler words
     itemPhrase = cleanSpeechUtterance(itemPhrase);
+
+    // Strip trailing conversational meta directives attached to the dish name
+    // e.g. "can I have Wagyu Ribeye and put this on the order list" or "Wagyu Ribeye on the order list"
+    itemPhrase = itemPhrase
+      .replace(
+        /\s+(?:and\s+)?(?:please\s+)?(?:put|add|place)\s+(?:this|that|it)?\s+(?:on|in|to)\s+(?:the\s+|my\s+)?(?:order\s*list|order|ticket|list)\s*$/i,
+        ""
+      )
+      .replace(/\s+(?:on|in|to)\s+(?:the\s+|my\s+)?(?:order\s*list|order|ticket|list)\s*$/i, "")
+      .replace(
+        /\s+(?:and\s+)?(?:display|show|calculate|tell me)\s+(?:the\s+)?(?:total\s*amount|total|bill)\s*$/i,
+        ""
+      )
+      .trim();
+
+    // If phrase reduced to empty or is a meta directive/confirmation/inquiry, do not treat as an item
+    if (
+      !itemPhrase ||
+      isMetaDirective(itemPhrase) ||
+      isVoiceConfirmation(itemPhrase) ||
+      isQuestionOrInquiry(itemPhrase) ||
+      /^(?:where|where's|where is|what is|how much)\b/i.test(itemPhrase)
+    ) {
+      continue;
+    }
+
+    // Handle "anything from menu" / "anything from the menu" / "something from the menu"
+    if (/\b(?:anything|something)\s+(?:from|on)\s+(?:the\s+)?menu\b/i.test(itemPhrase)) {
+      const chefSpecial = menu.find((m) => m.name.toLowerCase().includes("wagyu")) || menu[0];
+      if (chefSpecial) {
+        const key = chefSpecial.id || chefSpecial.name;
+        const price = Number(chefSpecial.price);
+        draftItems.set(key, {
+          id: chefSpecial.id || chefSpecial.name,
+          name: chefSpecial.name,
+          quantity: 1,
+          price,
+          lineTotal: price,
+          confidence: 1.0,
+          matchedText: itemPhrase,
+          status: "matched",
+        });
+        lastOrderedItemId = key;
+        hasOrderOperations = true;
+        lastAction = { type: "add", itemName: chefSpecial.name, quantity: 1 };
+        continue;
+      }
+    }
 
     // Check for Ambiguity (e.g. "fillet" matching multiple items)
     const ambiguity = checkAmbiguity(itemPhrase, menu);
@@ -743,7 +1123,12 @@ export function matchOrderFromTranscript(
     // Match against active menu
     const match = findBestMenuMatch(itemPhrase, menu);
     if (!match || match.confidence < 0.75) {
-      if (itemPhrase && itemPhrase.length >= 2 && !isVoiceConfirmation(itemPhrase)) {
+      if (
+        itemPhrase &&
+        itemPhrase.length >= 2 &&
+        !isVoiceConfirmation(itemPhrase) &&
+        !isMetaDirective(itemPhrase)
+      ) {
         unmatchedPhrases.push(itemPhrase);
       }
       continue;
@@ -761,6 +1146,8 @@ export function matchOrderFromTranscript(
         existing.notes = existing.notes ? `${existing.notes}; ${notes}` : notes;
       }
       lastOrderedItemId = key;
+      hasOrderOperations = true;
+      lastAction = { type: "add", itemName: item.name, quantity };
     } else {
       draftItems.set(key, {
         id: item.id || item.name,
@@ -774,6 +1161,8 @@ export function matchOrderFromTranscript(
         notes,
       });
       lastOrderedItemId = key;
+      hasOrderOperations = true;
+      lastAction = { type: "add", itemName: item.name, quantity };
     }
   }
 
@@ -792,5 +1181,8 @@ export function matchOrderFromTranscript(
         ? `This is the total after calculating: $${total.toFixed(2)}.`
         : "",
     total,
+    hasOrderOperations,
+    wasCleared,
+    lastAction,
   };
 }

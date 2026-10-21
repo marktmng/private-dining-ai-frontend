@@ -4,6 +4,9 @@ import {
   parseCorrection,
   parseRemovalOrNegation,
   checkAmbiguity,
+  isCancellationOrClear,
+  isVoiceConfirmation,
+  isMetaDirective,
 } from "./orderMatcher";
 import type { MenuItem } from "@/types/order";
 
@@ -274,13 +277,255 @@ assert(directSalmonRes.items.length === 1, "'Pan-Seared Salmon' matches 1 item")
 assert(directSalmonRes.items[0]?.name === "Pan-Seared Salmon", "Item is Pan-Seared Salmon");
 
 // Test: Voice Confirmation Detection
-import { isVoiceConfirmation } from "./orderMatcher";
 assert(isVoiceConfirmation("Confirmed") === true, "Identifies 'Confirmed' as voice confirmation");
 assert(isVoiceConfirmation("confirm the order") === true, "Identifies 'confirm the order' as voice confirmation");
 assert(isVoiceConfirmation("Send it to Order") === true, "Identifies 'Send it to Order' as voice confirmation");
 assert(isVoiceConfirmation("Send to kitchen") === true, "Identifies 'Send to kitchen' as voice confirmation");
 assert(isVoiceConfirmation("Place order") === true, "Identifies 'Place order' as voice confirmation");
 assert(isVoiceConfirmation("I want more fries") === false, "Regular order is not voice confirmation");
+assert(isVoiceConfirmation("yes") === true, "Identifies 'yes' as affirmative voice confirmation");
+assert(isVoiceConfirmation("yes please") === true, "Identifies 'yes please' as affirmative voice confirmation");
+assert(isVoiceConfirmation("yeah") === true, "Identifies 'yeah' as affirmative voice confirmation");
+assert(isVoiceConfirmation("yep") === true, "Identifies 'yep' as affirmative voice confirmation");
+assert(isVoiceConfirmation("sure") === true, "Identifies 'sure' as affirmative voice confirmation");
+
+// 14. Conversational Meta Directives & Order List Directives
+console.log("\n--- 14. Conversational Meta Directives (Must Never Cause Item Errors) ---");
+assert(isMetaDirective("put this on the order list") === true, "Identifies 'put this on the order list' as meta directive");
+assert(isMetaDirective("this on the order list") === true, "Identifies 'this on the order list' as meta directive");
+assert(isMetaDirective("add this on the order list") === true, "Identifies 'add this on the order list' as meta directive");
+assert(isMetaDirective("and display total amount") === true, "Identifies 'and display total amount' as meta directive");
+assert(isMetaDirective("display total amount") === true, "Identifies 'display total amount' as meta directive");
+assert(isMetaDirective("should I confirm") === true, "Identifies 'should I confirm' as meta directive");
+
+const metaDirectiveRes = matchOrderFromTranscript(
+  "can I have Wagyu Ribeye and put this on the order list and display total amount",
+  sampleMenu
+);
+assert(metaDirectiveRes.items.length === 1, "Matches 1 item for Wagyu with order list directive");
+assert(metaDirectiveRes.items[0]?.name === "Wagyu Ribeye", "Item is Wagyu Ribeye");
+assert(metaDirectiveRes.total === 48, "Total is $48.00");
+assert((metaDirectiveRes.unmatchedPhrases?.length ?? 0) === 0, "No false 'item not found' error for 'this on the order list'");
+
+// 15. Testing All 10 Menu Items with 'can I have [item]'
+console.log("\n--- 15. All 10 Menu Items via 'can I have [dish]' ---");
+const allMenuPhrases: [string, string, number][] = [
+  ["can I have Wagyu Ribeye", "Wagyu Ribeye", 48],
+  ["can I have an Eye Fillet", "Eye Fillet", 42],
+  ["can I have Eye Fillet", "Eye Fillet", 42],
+  ["can I have Pan-Seared Salmon", "Pan-Seared Salmon", 32],
+  ["can I have Truffle Mushroom Risotto", "Truffle Mushroom Risotto", 26],
+  ["can I have Beef Carpaccio", "Beef Carpaccio", 19],
+  ["can I have Caesar Salad", "Caesar Salad", 18],
+  ["can I have French Fries", "French Fries", 9],
+  ["can I have Chocolate Fondant", "Chocolate Fondant", 15],
+  ["can I have Flat White", "Flat White", 5.5],
+  ["can I have Sparkling Water", "Sparkling Water", 6],
+  ["can I have anything from menu", "Wagyu Ribeye", 48],
+  ["can I have anything from the menu", "Wagyu Ribeye", 48],
+  ["can I have affiliate", "Eye Fillet", 42],
+  ["can I have the affiliate", "Eye Fillet", 42],
+  ["can I have an affiliate", "Eye Fillet", 42],
+  ["can I have giveaway", "Wagyu Ribeye", 48],
+];
+
+for (const [phrase, expectedName, expectedPrice] of allMenuPhrases) {
+  const res = matchOrderFromTranscript(phrase, sampleMenu);
+  assert(res.items.length === 1, `'${phrase}' matches 1 item`);
+  assert(res.items[0]?.name === expectedName, `'${phrase}' resolves to '${expectedName}'`);
+  assert(res.total === expectedPrice, `'${phrase}' total is $${expectedPrice.toFixed(2)}`);
+  assert((res.unmatchedPhrases?.length ?? 0) === 0, `'${phrase}' has 0 unmatched phrases`);
+}
+
+// 16. Inquiries and Where Questions (Must Never Be Treated as Missing Items)
+console.log("\n--- 16. Inquiries and Where Questions ---");
+const inquiryRes1 = matchOrderFromTranscript("where is the affiliate", sampleMenu);
+assert(inquiryRes1.items.length === 0, "'where is the affiliate' does not add an item");
+assert((inquiryRes1.unmatchedPhrases?.length ?? 0) === 0, "'where is the affiliate' has 0 unmatched phrases");
+
+const inquiryRes2 = matchOrderFromTranscript("where is the eye fillet", sampleMenu);
+assert(inquiryRes2.items.length === 0, "'where is the eye fillet' does not add an item");
+assert((inquiryRes2.unmatchedPhrases?.length ?? 0) === 0, "'where is the eye fillet' has 0 unmatched phrases");
+
+// 17. Professional Chef Voice Confirmations
+console.log("\n--- 17. Professional Chef Voice Confirmations ---");
+assert(isVoiceConfirmation("let the chef know") === true, "Identifies 'let the chef know' as voice confirmation");
+assert(isVoiceConfirmation("tell the chef") === true, "Identifies 'tell the chef' as voice confirmation");
+assert(isVoiceConfirmation("prepare it") === true, "Identifies 'prepare it' as voice confirmation");
+assert(isVoiceConfirmation("go ahead and prepare") === true, "Identifies 'go ahead and prepare' as voice confirmation");
+assert(isVoiceConfirmation("please prepare") === true, "Identifies 'please prepare' as voice confirmation");
+
+// 18. Voice Removals, Item Deletions & Order Clearing
+console.log("\n--- 18. Voice Removals, Item Deletions & Order Clearing ---");
+
+// Test: Cancellation / Clear phrases
+const clearPhrases = [
+  "clear order",
+  "clear the order",
+  "clear my order",
+  "clear everything",
+  "delete everything",
+  "delete all items",
+  "cancel order",
+  "cancel the order",
+  "empty the cart",
+  "empty cart",
+  "reset order",
+  "reset the order",
+  "start over",
+  "start again",
+  "remove everything",
+  "remove all items",
+];
+
+for (const phrase of clearPhrases) {
+  assert(isCancellationOrClear(phrase) === true, `'${phrase}' is recognized as cancellation/clear`);
+}
+
+// Test: Clear an active order
+const orderThenClear = matchOrderFromTranscript(
+  "can I have an Eye Fillet\nclear the order",
+  sampleMenu
+);
+assert(orderThenClear.items.length === 0, "Order is completely empty after 'clear the order'");
+assert(orderThenClear.total === 0, "Total is $0.00 after 'clear the order'");
+assert(orderThenClear.wasCleared === true, "wasCleared flag is true");
+assert(orderThenClear.hasOrderOperations === true, "hasOrderOperations is true");
+
+// Test: Remove specific item by voice
+const orderTwoRemoveOne = matchOrderFromTranscript(
+  "can I have an Eye Fillet and one Wagyu Ribeye\nremove the eye fillet",
+  sampleMenu
+);
+assert(orderTwoRemoveOne.items.length === 1, "Only 1 item remains after removing eye fillet");
+assert(orderTwoRemoveOne.items[0]?.name === "Wagyu Ribeye", "Remaining item is Wagyu Ribeye");
+assert(orderTwoRemoveOne.total === 48, "Total is $48.00 after removing Eye Fillet");
+assert(orderTwoRemoveOne.lastAction?.type === "remove", "Last action was 'remove'");
+
+// Test: Remove item using phonetic alias "remove affiliate"
+const orderAffiliateRemoveAffiliate = matchOrderFromTranscript(
+  "can I have affiliate\nremove the affiliate",
+  sampleMenu
+);
+assert(orderAffiliateRemoveAffiliate.items.length === 0, "Eye Fillet removed via 'remove the affiliate'");
+assert(orderAffiliateRemoveAffiliate.total === 0, "Total is $0 after removing affiliate");
+
+// Test: Remove item using phonetic alias "delete giveaway"
+const orderGiveawayDeleteGiveaway = matchOrderFromTranscript(
+  "can I have giveaway and Pan-Seared Salmon\ndelete giveaway",
+  sampleMenu
+);
+assert(orderGiveawayDeleteGiveaway.items.length === 1, "1 item remains after 'delete giveaway'");
+assert(orderGiveawayDeleteGiveaway.items[0]?.name === "Pan-Seared Salmon", "Remaining item is Pan-Seared Salmon");
+assert(orderGiveawayDeleteGiveaway.total === 32, "Total is $32.00");
+
+// Test: Decrement quantity by voice
+const orderTwoWagyuRemoveOne = matchOrderFromTranscript(
+  "can I have two Wagyu Ribeyes\nremove one wagyu ribeye",
+  sampleMenu
+);
+assert(orderTwoWagyuRemoveOne.items.length === 1, "1 item remains after decrementing");
+assert(orderTwoWagyuRemoveOne.items[0]?.quantity === 1, "Quantity decremented from 2 to 1");
+assert(orderTwoWagyuRemoveOne.total === 48, "Total is $48.00");
+
+// Test: "take off the salmon"
+const orderSalmonTakeOff = matchOrderFromTranscript(
+  "can I have Pan-Seared Salmon\ntake off the salmon",
+  sampleMenu
+);
+assert(orderSalmonTakeOff.items.length === 0, "Salmon removed via 'take off the salmon'");
+
+// Test: "cancel the fries"
+const orderFriesCancel = matchOrderFromTranscript(
+  "can I have French Fries and Caesar Salad\ncancel the fries",
+  sampleMenu
+);
+assert(orderFriesCancel.items.length === 1, "Caesar Salad remains after 'cancel the fries'");
+assert(orderFriesCancel.items[0]?.name === "Caesar Salad", "Item is Caesar Salad");
+assert(orderFriesCancel.total === 18, "Total is $18.00");
+
+// Test: "actually no risotto"
+const orderRisottoNo = matchOrderFromTranscript(
+  "can I have Truffle Mushroom Risotto\nactually no risotto",
+  sampleMenu
+);
+assert(orderRisottoNo.items.length === 0, "Risotto removed via 'actually no risotto'");
+
+// --- 19. Accent Pronunciation & Speech Wrappers for Eye Fillet ---
+console.log("\n--- 19. Accent Pronunciation & Speech Wrappers for Eye Fillet ---");
+
+const orderCanYouGiveMeIFeelIt = matchOrderFromTranscript(
+  "can you give me I feel it",
+  sampleMenu
+);
+assert(orderCanYouGiveMeIFeelIt.items.length === 1, "'can you give me I feel it' matches 1 item");
+assert(orderCanYouGiveMeIFeelIt.items[0]?.name === "Eye Fillet", "'can you give me I feel it' resolves to 'Eye Fillet'");
+assert(orderCanYouGiveMeIFeelIt.total === 42, "'can you give me I feel it' total is $42.00");
+assert(
+  !orderCanYouGiveMeIFeelIt.unmatchedPhrases || orderCanYouGiveMeIFeelIt.unmatchedPhrases.length === 0,
+  "'can you give me I feel it' has 0 unmatched phrases"
+);
+
+const orderGiveMeIFeelIt = matchOrderFromTranscript(
+  "give me i feel it",
+  sampleMenu
+);
+assert(orderGiveMeIFeelIt.items.length === 1, "'give me i feel it' matches 1 item");
+assert(orderGiveMeIFeelIt.items[0]?.name === "Eye Fillet", "'give me i feel it' resolves to 'Eye Fillet'");
+assert(orderGiveMeIFeelIt.total === 42, "'give me i feel it' total is $42.00");
+assert(
+  !orderGiveMeIFeelIt.unmatchedPhrases || orderGiveMeIFeelIt.unmatchedPhrases.length === 0,
+  "'give me i feel it' has 0 unmatched phrases"
+);
+
+const orderCouldYouGiveMeIFeelIt = matchOrderFromTranscript(
+  "could you give me I feel it",
+  sampleMenu
+);
+assert(orderCouldYouGiveMeIFeelIt.items.length === 1, "'could you give me I feel it' matches 1 item");
+assert(orderCouldYouGiveMeIFeelIt.items[0]?.name === "Eye Fillet", "'could you give me I feel it' resolves to 'Eye Fillet'");
+assert(orderCouldYouGiveMeIFeelIt.total === 42, "'could you give me I feel it' total is $42.00");
+assert(
+  !orderCouldYouGiveMeIFeelIt.unmatchedPhrases || orderCouldYouGiveMeIFeelIt.unmatchedPhrases.length === 0,
+  "'could you give me I feel it' has 0 unmatched phrases"
+);
+
+const orderCanYouGiveMeWagyu = matchOrderFromTranscript(
+  "can you give me Wagyu Ribeye",
+  sampleMenu
+);
+assert(orderCanYouGiveMeWagyu.items.length === 1, "'can you give me Wagyu Ribeye' matches 1 item");
+assert(orderCanYouGiveMeWagyu.items[0]?.name === "Wagyu Ribeye", "'can you give me Wagyu Ribeye' resolves to 'Wagyu Ribeye'");
+assert(orderCanYouGiveMeWagyu.total === 48, "'can you give me Wagyu Ribeye' total is $48.00");
+assert(
+  !orderCanYouGiveMeWagyu.unmatchedPhrases || orderCanYouGiveMeWagyu.unmatchedPhrases.length === 0,
+  "'can you give me Wagyu Ribeye' has 0 unmatched phrases"
+);
+
+const orderCanYouGiveMeAffiliate = matchOrderFromTranscript(
+  "can you give me an affiliate",
+  sampleMenu
+);
+assert(orderCanYouGiveMeAffiliate.items.length === 1, "'can you give me an affiliate' matches 1 item");
+assert(orderCanYouGiveMeAffiliate.items[0]?.name === "Eye Fillet", "'can you give me an affiliate' resolves to 'Eye Fillet'");
+assert(orderCanYouGiveMeAffiliate.total === 42, "'can you give me an affiliate' total is $42.00");
+assert(
+  !orderCanYouGiveMeAffiliate.unmatchedPhrases || orderCanYouGiveMeAffiliate.unmatchedPhrases.length === 0,
+  "'can you give me an affiliate' has 0 unmatched phrases"
+);
+
+const orderCanYouPleaseGiveUsTwoEyeFillets = matchOrderFromTranscript(
+  "can you please give us two eye fillets",
+  sampleMenu
+);
+assert(orderCanYouPleaseGiveUsTwoEyeFillets.items.length === 1, "'can you please give us two eye fillets' matches 1 item");
+assert(orderCanYouPleaseGiveUsTwoEyeFillets.items[0]?.quantity === 2, "Quantity is 2");
+assert(orderCanYouPleaseGiveUsTwoEyeFillets.items[0]?.name === "Eye Fillet", "Item is 'Eye Fillet'");
+assert(orderCanYouPleaseGiveUsTwoEyeFillets.total === 84, "Total is $84.00 (2 x $42.00)");
+assert(
+  !orderCanYouPleaseGiveUsTwoEyeFillets.unmatchedPhrases || orderCanYouPleaseGiveUsTwoEyeFillets.unmatchedPhrases.length === 0,
+  "0 unmatched phrases"
+);
 
 console.log("\n=======================================================");
 console.log(`TOTAL MATCHER TESTS : ${total}`);

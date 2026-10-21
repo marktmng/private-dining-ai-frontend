@@ -32,6 +32,7 @@ export interface CreateOrderItemInput {
 export interface CreateOrderPayload {
   tableId?: string;
   roomId?: string;
+  status?: string;
   specialInstructions?: string;
   items: CreateOrderItemInput[];
   idempotencyKey?: string;
