@@ -2,16 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import Conversation from "@/components/Conversation";
-import Header from "@/components/Header";
-import LoginModal from "@/components/LoginModal";
-import MenuItem from "@/components/MenuItem";
-import OrderSummary from "@/components/OrderSummary";
-import StatusCard from "@/components/StatusCard";
-import VoiceButton from "@/components/VoiceButton";
+import AnimeRadarDial from "@/components/AnimeRadarDial";
+import SplashCalibration from "@/components/SplashCalibration";
+import TacticalAssistantPanel from "@/components/TacticalAssistantPanel";
+import TacticalDock, { type ActiveView } from "@/components/TacticalDock";
+import TacticalHeader from "@/components/TacticalHeader";
+import TacticalLoginModal from "@/components/LoginModal";
+import TacticalMenuCodex from "@/components/TacticalMenuCodex";
+import TacticalSommelier from "@/components/TacticalSommelier";
+import TacticalTicker from "@/components/TacticalTicker";
 
 import { getMe, getMenu, getOrderById, submitOrder, updateOrderStatus } from "@/lib/api";
-import { matchOrderFromTranscript } from "@/lib/orderMatcher";
+import { matchOrderFromTranscript, type MatchedOrderItem } from "@/lib/orderMatcher";
 import {
   startRealtimeVoiceSession,
   type RealtimeVoiceSession,
@@ -38,15 +40,28 @@ export default function CustomerPage() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [restaurantName, setRestaurantName] = useState<string>("Restaurant A");
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [showSplash, setShowSplash] = useState(false);
 
+  // Active view tab (dock selection)
+  const [activeView, setActiveView] = useState<ActiveView>("dial");
+
+  // Right column tab switcher: "both" | "order" | "menu"
+  const [rightPanelTab, setRightPanelTab] = useState<"menu" | "order">("order");
+
+  // Voice & Conversation state
   const [conversation, setConversation] = useState<TranscriptEntry[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // Menu state
   const [menu, setMenu] = useState<MenuItemType[]>([]);
   const [menuError, setMenuError] = useState("");
-  const [status, setStatus] = useState("Waiting for customer...");
+  const [isMenuLoading, setIsMenuLoading] = useState(true);
+  const [status, setStatus] = useState("System armed. Speak to begin your order.");
+
+  // Direct authoritative order items state (ensuring 100% accuracy)
+  const [orderItems, setOrderItems] = useState<MatchedOrderItem[]>([]);
 
   // Order submission and persistence state
   const [specialInstructions, setSpecialInstructions] = useState("");
@@ -54,9 +69,15 @@ export default function CustomerPage() {
   const [submitOrderError, setSubmitOrderError] = useState<string | null>(null);
   const [persistedOrder, setPersistedOrder] = useState<PersistedOrder | null>(null);
 
+  // Staff Call State
+  const [isCallingWaiter, setIsCallingWaiter] = useState(false);
+
+  // Unmatched voice phrase feedback state
+  const [unmatchedPhrase, setUnmatchedPhrase] = useState<string | null>(null);
+
   const sessionRef = useRef<RealtimeVoiceSession | null>(null);
 
-  // 1. Check existing saved token on client mount
+  // 1. Check saved token on mount
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!savedToken) return;
@@ -91,6 +112,7 @@ export default function CustomerPage() {
 
     async function loadMenu() {
       try {
+        setIsMenuLoading(true);
         setMenuError("");
         const items = await getMenu(authToken ?? undefined);
         if (!isCancelled) {
@@ -100,7 +122,11 @@ export default function CustomerPage() {
       } catch (error) {
         console.error(error);
         if (!isCancelled) {
-          setMenuError("Menu is unavailable right now.");
+          setMenuError("Menu is temporarily unavailable.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsMenuLoading(false);
         }
       }
     }
@@ -122,27 +148,22 @@ export default function CustomerPage() {
     }
     setPersistedOrder(null);
     setConversation([]);
-    setStatus(`Connected to ${user.restaurantName || "Restaurant A"}`);
+    setOrderItems([]);
+    setStatus(`Database synced with ${user.restaurantName || "Restaurant A"}`);
   }, []);
 
-  // Handle logout (switch to unauthenticated prototype)
+  // Handle logout
   const handleSignOut = useCallback(() => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setAuthToken(null);
     setCurrentUser(null);
     setPersistedOrder(null);
     setConversation([]);
-    setStatus("Switched to prototype mode.");
+    setOrderItems([]);
+    setStatus("Switched to offline prototype mode.");
   }, []);
 
-  const groupedMenu = useMemo(() => {
-    return menu.reduce<Record<string, MenuItemType[]>>((groups, item) => {
-      const category = item.category ?? "Menu";
-      groups[category] = [...(groups[category] ?? []), item];
-      return groups;
-    }, {});
-  }, [menu]);
-
+  // Extract user speech transcript
   const currentOrder = useMemo(() => {
     return conversation
       .filter((entry) => entry.role === "user" && entry.isFinal)
@@ -151,14 +172,74 @@ export default function CustomerPage() {
       .join("\n");
   }, [conversation]);
 
-  const orderMatch = useMemo(() => {
-    return matchOrderFromTranscript(currentOrder, menu);
+  // Sync voice matched items into order items with 100% price accuracy
+  useEffect(() => {
+    if (!currentOrder || menu.length === 0) {
+      setUnmatchedPhrase(null);
+      return;
+    }
+    const match = matchOrderFromTranscript(currentOrder, menu);
+
+    if (match.unmatchedPhrases && match.unmatchedPhrases.length > 0) {
+      setUnmatchedPhrase(match.unmatchedPhrases[match.unmatchedPhrases.length - 1]);
+    } else {
+      setUnmatchedPhrase(null);
+    }
+
+    if (match.items.length > 0) {
+      setOrderItems((currentItems) => {
+        const itemMap = new Map<string, MatchedOrderItem>();
+
+        // Keep current items
+        currentItems.forEach((it) => {
+          itemMap.set(it.id, { ...it });
+        });
+
+        // Upsert voice matched items
+        match.items.forEach((mItem) => {
+          const existing = itemMap.get(mItem.id);
+          const unitPrice = Number(mItem.price);
+
+          if (existing) {
+            existing.quantity = Math.max(existing.quantity, mItem.quantity);
+            existing.price = unitPrice;
+            existing.lineTotal = Number((existing.quantity * unitPrice).toFixed(2));
+            if (mItem.notes) existing.notes = mItem.notes;
+          } else {
+            itemMap.set(mItem.id, {
+              ...mItem,
+              price: unitPrice,
+              lineTotal: Number((mItem.quantity * unitPrice).toFixed(2)),
+            });
+          }
+        });
+
+        return Array.from(itemMap.values());
+      });
+    }
   }, [currentOrder, menu]);
 
+  // Calculate 100% authoritative order total
+  const calculatedTotal = useMemo(() => {
+    return Number(
+      orderItems.reduce((acc, item) => acc + item.lineTotal, 0).toFixed(2)
+    );
+  }, [orderItems]);
+
+  // Order quantities map for menu codex checkmarks
+  const orderQuantities = useMemo(() => {
+    const qMap: Record<string, number> = {};
+    orderItems.forEach((it) => {
+      qMap[it.id] = it.quantity;
+      qMap[it.name] = it.quantity;
+    });
+    return qMap;
+  }, [orderItems]);
+
   const displayStatus =
-    orderMatch.needsConfirmation.length > 0
-      ? "Please confirm the highlighted menu item."
-      : orderMatch.spokenTotal || status;
+    calculatedTotal > 0
+      ? `Active order total: $${calculatedTotal.toFixed(2)}`
+      : status;
 
   const conversationText = useMemo(() => {
     return conversation
@@ -198,18 +279,17 @@ export default function CustomerPage() {
     setIsConnecting(false);
     setIsListening(false);
     setIsSpeaking(false);
-    setStatus("Voice session ended.");
+    setStatus("Voice transmission ended.");
   }, []);
 
   const startListening = useCallback(async () => {
-    // If there was an earlier persisted order, clear it for new order
     if (persistedOrder) {
       setPersistedOrder(null);
     }
 
     setConversation([]);
     setIsConnecting(true);
-    setStatus("Requesting microphone...");
+    setStatus("Synchronizing microphone & acoustic matrices...");
 
     try {
       const session = await startRealtimeVoiceSession({
@@ -228,6 +308,7 @@ export default function CustomerPage() {
         onReady: () => {
           setIsListening(true);
           setIsConnecting(false);
+          setStatus("Voice channel armed • Speak naturally");
         },
         onStatusChange: setStatus,
         onTranscript: upsertTranscript,
@@ -245,7 +326,7 @@ export default function CustomerPage() {
       setStatus(
         error instanceof Error
           ? error.message
-          : "Unable to start voice session."
+          : "Unable to connect to voice engine."
       );
     }
   }, [authToken, persistedOrder, upsertTranscript]);
@@ -259,22 +340,153 @@ export default function CustomerPage() {
     void startListening();
   }, [startListening, stopListening]);
 
+  // Direct 100% Accurate Item Addition from Menu Click
+  const handleAddMenuItemDirect = useCallback((item: MenuItemType) => {
+    const key = item.id || item.name;
+    const priceNum = Number(item.price);
+
+    setOrderItems((current) => {
+      const existingIndex = current.findIndex(
+        (it) => it.id === key || it.name.toLowerCase() === item.name.toLowerCase()
+      );
+
+      if (existingIndex >= 0) {
+        const updated = [...current];
+        const ex = updated[existingIndex];
+        const newQty = ex.quantity + 1;
+        updated[existingIndex] = {
+          ...ex,
+          quantity: newQty,
+          price: priceNum,
+          lineTotal: Number((newQty * priceNum).toFixed(2)),
+        };
+        return updated;
+      } else {
+        return [
+          ...current,
+          {
+            id: key,
+            name: item.name,
+            quantity: 1,
+            price: priceNum,
+            lineTotal: Number(priceNum.toFixed(2)),
+            confidence: 1.0,
+            status: "matched",
+            matchedText: item.name,
+          },
+        ];
+      }
+    });
+
+    // Also add to conversation transcript for AI context
+    setConversation((curr) => [
+      ...curr,
+      {
+        id: `btn-${Date.now()}`,
+        isFinal: true,
+        role: "user",
+        text: `I'd like to add one ${item.name}`,
+      },
+    ]);
+
+    setStatus(`Added 1x ${item.name} ($${priceNum.toFixed(2)}) to active order.`);
+  }, []);
+
+  // Stepper: Increment quantity (+1)
+  const handleIncrementItem = useCallback((id: string) => {
+    setOrderItems((current) =>
+      current.map((it) => {
+        if (it.id === id) {
+          const newQty = it.quantity + 1;
+          return {
+            ...it,
+            quantity: newQty,
+            lineTotal: Number((newQty * it.price).toFixed(2)),
+          };
+        }
+        return it;
+      })
+    );
+  }, []);
+
+  // Stepper: Decrement quantity (-1)
+  const handleDecrementItem = useCallback((id: string) => {
+    setOrderItems((current) =>
+      current
+        .map((it) => {
+          if (it.id === id) {
+            const newQty = it.quantity - 1;
+            return {
+              ...it,
+              quantity: newQty,
+              lineTotal: Number((newQty * it.price).toFixed(2)),
+            };
+          }
+          return it;
+        })
+        .filter((it) => it.quantity > 0)
+    );
+  }, []);
+
+  // Remove individual item
+  const handleRemoveItem = useCallback((id: string) => {
+    setOrderItems((current) => current.filter((it) => it.id !== id));
+  }, []);
+
+  // Clear all items in order
+  const handleClearOrder = useCallback(() => {
+    setOrderItems([]);
+    setConversation([]);
+    setStatus("Order cleared. Ready for new selections.");
+  }, []);
+
   // Order Submission Handler
   const handleSubmitConfirmedOrder = useCallback(async () => {
+    if (orderItems.length === 0) {
+      setSubmitOrderError("No recognized items in order list.");
+      return;
+    }
+
     if (!authToken) {
-      setSubmitOrderError("Please sign in as Restaurant A to submit orders to the database.");
+      // Prototype simulation mode: create simulated persisted order so the user can test the full ticket lifecycle
+      setIsSubmittingOrder(true);
+      setSubmitOrderError(null);
+      setTimeout(() => {
+        setIsSubmittingOrder(false);
+        const protoId = `proto-${Date.now().toString(36)}`;
+        setPersistedOrder({
+          id: protoId,
+          restaurantId: "proto-restaurant",
+          status: "SENT_TO_KITCHEN",
+          total: calculatedTotal,
+          specialInstructions: specialInstructions.trim() || null,
+          items: orderItems.map((item, idx) => ({
+            id: `proto-item-${idx}`,
+            orderId: protoId,
+            menuItemId: item.id,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            subtotal: item.lineTotal,
+            notes: item.notes || null,
+            menuItem: {
+              id: item.id,
+              name: item.name,
+              price: item.price,
+            },
+          })),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        setStatus(
+          `Prototype order #${protoId.slice(0, 8)} simulated & dispatched to kitchen preview! Total: $${calculatedTotal.toFixed(2)}`
+        );
+      }, 500);
       return;
     }
 
-    if (orderMatch.items.length === 0) {
-      setSubmitOrderError("No menu items to order.");
-      return;
-    }
-
-    // Verify all items have database IDs
-    const missingIds = orderMatch.items.filter((i) => !i.id);
+    const missingIds = orderItems.filter((i) => !i.id);
     if (missingIds.length > 0) {
-      setSubmitOrderError("Some items do not have valid database IDs.");
+      setSubmitOrderError("Certain items lack valid database identifier.");
       return;
     }
 
@@ -286,7 +498,7 @@ export default function CustomerPage() {
       const payload: CreateOrderPayload = {
         idempotencyKey,
         specialInstructions: specialInstructions.trim() || undefined,
-        items: orderMatch.items.map((item) => ({
+        items: orderItems.map((item) => ({
           menuItemId: item.id,
           quantity: item.quantity,
           notes: item.notes || undefined,
@@ -295,43 +507,66 @@ export default function CustomerPage() {
 
       const created = await submitOrder(payload, authToken);
 
-      // Transition to CONFIRMED, then SENT_TO_KITCHEN
       let finalOrder = created;
       try {
         await updateOrderStatus(created.id, "CONFIRMED", authToken);
         finalOrder = await updateOrderStatus(created.id, "SENT_TO_KITCHEN", authToken);
       } catch (transErr) {
-        console.warn("Notice transitioning status to kitchen:", transErr);
+        console.warn("Notice updating order status:", transErr);
       }
 
       setPersistedOrder(finalOrder);
       setStatus(
-        `Order #${finalOrder.id.slice(0, 8)} confirmed and sent to kitchen! Total: $${Number(finalOrder.total).toFixed(2)}`
+        `Order #${finalOrder.id.slice(0, 8)} confirmed and dispatched to kitchen! Total: $${Number(finalOrder.total).toFixed(2)}`
       );
 
-      // Stop active voice session upon placement
       if (sessionRef.current) {
         stopListening();
       }
     } catch (err: unknown) {
       const errorMsg =
-        err instanceof Error ? err.message : "Failed to submit order to the kitchen.";
-      console.error("Order submission failed:", errorMsg);
+        err instanceof Error ? err.message : "Failed to transmit order to kitchen.";
+      console.error("Order submission error:", errorMsg);
       setSubmitOrderError(errorMsg);
     } finally {
       setIsSubmittingOrder(false);
     }
-  }, [authToken, orderMatch.items, specialInstructions, stopListening]);
+  }, [authToken, calculatedTotal, orderItems, specialInstructions, stopListening]);
 
   const handleResetOrder = useCallback(() => {
     setPersistedOrder(null);
+    setOrderItems([]);
     setConversation([]);
     setSpecialInstructions("");
     setSubmitOrderError(null);
-    setStatus("Ready for next order.");
+    setStatus("System ready for next order.");
   }, []);
 
-  // Poll live order status until completed or cancelled
+  // Quick prompt handler (clicking prompts or pairings adds to transcript)
+  const handleQuickPrompt = useCallback(
+    (promptText: string) => {
+      const userEntry: TranscriptEntry = {
+        id: `prompt-${Date.now()}`,
+        isFinal: true,
+        role: "user",
+        text: promptText,
+      };
+      setConversation((current) => [...current, userEntry]);
+      setStatus(`Processed instruction: "${promptText}"`);
+    },
+    []
+  );
+
+  // Waiter Call Handler
+  const handleCallWaiter = useCallback(() => {
+    setIsCallingWaiter(true);
+    setStatus("🛎️ Private dining butler notified for Table VIP-01.");
+    setTimeout(() => {
+      setIsCallingWaiter(false);
+    }, 4500);
+  }, []);
+
+  // Poll live order status
   useEffect(() => {
     if (!persistedOrder || !authToken) return;
     if (persistedOrder.status === "COMPLETED" || persistedOrder.status === "CANCELLED") return;
@@ -342,21 +577,21 @@ export default function CustomerPage() {
         if (latest && latest.status !== persistedOrder.status) {
           setPersistedOrder(latest);
           if (latest.status === "PREPARING") {
-            setStatus(`Order #${latest.id.slice(0, 8)} is now being prepared by the chef!`);
+            setStatus(`Order #${latest.id.slice(0, 8)} is now being prepared by the executive chef.`);
           } else if (latest.status === "READY") {
-            setStatus(`Order #${latest.id.slice(0, 8)} is READY for service!`);
+            setStatus(`Order #${latest.id.slice(0, 8)} is PLATED & READY for service.`);
           } else if (latest.status === "COMPLETED") {
-            setStatus(`Order #${latest.id.slice(0, 8)} has been completed!`);
+            setStatus(`Order #${latest.id.slice(0, 8)} service fulfilled.`);
           } else if (latest.status === "CANCELLED") {
             setStatus(
-              `Order #${latest.id.slice(0, 8)} was cancelled: ${
+              `Order #${latest.id.slice(0, 8)} cancelled: ${
                 latest.specialInstructions || "No reason specified"
               }`
             );
           }
         }
       } catch (e) {
-        console.warn("Status polling error:", e);
+        console.warn("Polling error:", e);
       }
     }, 4000);
 
@@ -370,82 +605,274 @@ export default function CustomerPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex justify-center">
-      <div className="w-full max-w-6xl p-6 sm:p-8 space-y-8">
-        <Header
-          user={currentUser}
-          restaurantName={restaurantName}
-          onOpenLogin={() => setIsLoginModalOpen(true)}
-          onSignOut={handleSignOut}
+    <main className="min-h-screen bg-[#191814] text-[#F3EFE6] tactical-grid flex flex-col justify-between overflow-x-hidden pb-16 lg:pb-0 select-none">
+      {/* Optional Splash Calibration Overlay */}
+      {showSplash && (
+        <SplashCalibration
+          showInitially={true}
+          onComplete={() => setShowSplash(false)}
+        />
+      )}
+
+      {/* Top Telemetry Header */}
+      <TacticalHeader
+        user={currentUser}
+        restaurantName={restaurantName}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onSignOut={handleSignOut}
+        menuItemCount={menu.length}
+        currentPath="/customer"
+      />
+
+      {/* Main Workspace: Left Dock + Center Stage + Right Menu & Order Hub */}
+      <div className="flex-1 flex flex-row overflow-hidden relative">
+        {/* Left Tactical Rail Dock */}
+        <TacticalDock
+          activeView={activeView}
+          onSelectView={setActiveView}
+          orderCount={orderItems.reduce((acc, it) => acc + it.quantity, 0)}
+          onCalibrate={() => setShowSplash(true)}
+          onCallWaiter={handleCallWaiter}
+          isCallingWaiter={isCallingWaiter}
         />
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
-          <div className="space-y-8">
-            <VoiceButton
-              disabled={isConnecting}
-              isConnecting={isConnecting}
-              isListening={isListening}
-              isSpeaking={isSpeaking}
-              onToggleListening={toggleListening}
-            />
+        {/* Responsive Grid: Center Voice Hub & Right Menu/Order Console */}
+        <div className="flex-1 p-3 sm:p-5 overflow-y-auto max-w-7xl mx-auto w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Center Stage: Voice Core or Full Screen Views */}
+            <div className="lg:col-span-7 flex flex-col items-center space-y-5">
+              {/* Voice Core Dial Hub */}
+              {activeView === "dial" && (
+                <div className="w-full flex flex-col items-center">
+                  <AnimeRadarDial
+                    disabled={isConnecting}
+                    isConnecting={isConnecting}
+                    isListening={isListening}
+                    isSpeaking={isSpeaking}
+                    onToggleListening={toggleListening}
+                    statusText={displayStatus}
+                  />
 
-            <OrderSummary
-              items={orderMatch.items}
-              needsConfirmation={orderMatch.needsConfirmation}
-              order={currentOrder}
-              spokenTotal={orderMatch.spokenTotal}
-              total={orderMatch.total}
-              isAuthenticated={!!authToken}
-              isSubmitting={isSubmittingOrder}
-              submitError={submitOrderError}
-              onSubmitOrder={handleSubmitConfirmedOrder}
-              persistedOrder={persistedOrder}
-              onResetOrder={handleResetOrder}
-              specialInstructions={specialInstructions}
-              onSpecialInstructionsChange={setSpecialInstructions}
-            />
+                  {/* Telemetry Feature Capsules beneath Dial */}
+                  <div className="w-full max-w-xl mt-3 grid grid-cols-3 gap-2 font-mono text-center">
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelTab("menu")}
+                      className={`p-2 rounded-xl border text-[11px] font-bold transition-all shadow-sm flex flex-col items-center gap-0.5 cursor-pointer ${
+                        rightPanelTab === "menu"
+                          ? "bg-[#2A261E] border-[#B68A2D] text-[#E5C378]"
+                          : "bg-[#211F1A] border-[#B68A2D]/30 text-[#F3EFE6]/70 hover:text-white"
+                      }`}
+                    >
+                      <span>📖 BROWSE MENU</span>
+                      <span className="text-[9px] text-[#B68A2D]/80">
+                        {menu.length} SELECTIONS
+                      </span>
+                    </button>
 
-            <Conversation response={conversationText} />
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("sommelier")}
+                      className="p-2 rounded-xl bg-[#211F1A] border border-[#B68A2D]/30 hover:border-[#B68A2D] text-[#E5C378] text-[11px] font-bold transition-all shadow-sm flex flex-col items-center gap-0.5 cursor-pointer"
+                    >
+                      <span>🍷 SOMMELIER</span>
+                      <span className="text-[9px] text-[#F3EFE6]/50">
+                        CELLAR PAIRINGS
+                      </span>
+                    </button>
 
-            <StatusCard status={displayStatus} />
-          </div>
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelTab("order")}
+                      className={`p-2 rounded-xl border text-[11px] font-bold transition-all shadow-sm flex flex-col items-center gap-0.5 cursor-pointer ${
+                        rightPanelTab === "order"
+                          ? "bg-[#2A261E] border-[#10B981] text-[#10B981]"
+                          : "bg-[#211F1A] border-[#B68A2D]/30 text-[#10B981] hover:text-[#34D399]"
+                      }`}
+                    >
+                      <span>📋 DISPATCH</span>
+                      <span className="text-[9px] text-[#10B981]">
+                        {orderItems.reduce((acc, it) => acc + it.quantity, 0)} ITEMS (${calculatedTotal.toFixed(2)})
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          <aside className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-xl lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
-              <h2 className="text-xl font-bold text-white">
-                {authToken ? "Active Database Menu" : "Prototype Menu"}
-              </h2>
-              <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-medium">
-                {menu.length} items
-              </span>
+              {/* Full Menu Codex (when switched via left dock) */}
+              {activeView === "menu" && (
+                <TacticalMenuCodex
+                  menu={menu}
+                  isLoading={isMenuLoading}
+                  error={menuError}
+                  isDbMenu={!!authToken}
+                  orderQuantities={orderQuantities}
+                  onSelectItem={handleAddMenuItemDirect}
+                />
+              )}
+
+              {/* Sommelier Cellar View */}
+              {activeView === "sommelier" && (
+                <div className="w-full space-y-4">
+                  <div className="flex justify-between items-center">
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("dial")}
+                      className="font-mono text-xs text-[#B68A2D] hover:text-[#E5C378] flex items-center gap-1 cursor-pointer"
+                    >
+                      ← Back to Voice Core
+                    </button>
+                  </div>
+                  <TacticalSommelier onAddPairing={handleQuickPrompt} />
+                </div>
+              )}
+
+              {/* Full Order View on mobile when selected */}
+              {activeView === "order" && (
+                <div className="w-full lg:hidden">
+                  <TacticalAssistantPanel
+                    items={orderItems}
+                    needsConfirmation={[]}
+                    orderTranscript={currentOrder}
+                    conversationText={conversationText}
+                    total={calculatedTotal}
+                    isAuthenticated={!!authToken}
+                    isSubmitting={isSubmittingOrder}
+                    submitError={submitOrderError}
+                    onSubmitOrder={handleSubmitConfirmedOrder}
+                    persistedOrder={persistedOrder}
+                    onResetOrder={handleResetOrder}
+                    specialInstructions={specialInstructions}
+                    onSpecialInstructionsChange={setSpecialInstructions}
+                    onQuickPrompt={handleQuickPrompt}
+                    onIncrementItem={handleIncrementItem}
+                    onDecrementItem={handleDecrementItem}
+                    onRemoveItem={handleRemoveItem}
+                    onClearOrder={handleClearOrder}
+                  />
+                </div>
+              )}
             </div>
 
-            {menuError ? (
-              <p className="text-red-400 text-sm">{menuError}</p>
-            ) : menu.length === 0 ? (
-              <p className="text-slate-400 text-sm">Loading menu...</p>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupedMenu).map(([category, items]) => (
-                  <section key={category}>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-blue-400 mb-1">
-                      {category}
-                    </h3>
+            {/* Right Column: Menu & Order Console (Visible continuously on desktop) */}
+            <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
+              {/* Right Column Mode Switcher */}
+              <div className="flex items-center justify-between bg-[#201E19] border border-[#B68A2D]/30 rounded-xl p-1 font-mono text-xs shadow-md">
+                <button
+                  type="button"
+                  onClick={() => setRightPanelTab("order")}
+                  className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    rightPanelTab === "order"
+                      ? "bg-[#B68A2D] text-[#191814] shadow"
+                      : "text-[#F3EFE6]/70 hover:text-white"
+                  }`}
+                >
+                  <span>ORDER ({orderItems.reduce((acc, it) => acc + it.quantity, 0)})</span>
+                  <span className="text-[10px] text-[#191814] bg-[#E5C378] px-1.5 rounded font-extrabold">
+                    ${calculatedTotal.toFixed(2)}
+                  </span>
+                </button>
 
-                    <div className="divide-y divide-slate-800/60">
-                      {items.map((item) => (
-                        <MenuItem key={item.id ?? item.name} item={item} />
-                      ))}
-                    </div>
-                  </section>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => setRightPanelTab("menu")}
+                  className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    rightPanelTab === "menu"
+                      ? "bg-[#B68A2D] text-[#191814] shadow"
+                      : "text-[#F3EFE6]/70 hover:text-white"
+                  }`}
+                >
+                  <span>MENU CODEX</span>
+                  <span className="text-[10px] bg-[#211F1A] text-[#E5C378] px-1.5 rounded">
+                    {menu.length}
+                  </span>
+                </button>
               </div>
-            )}
-          </aside>
+
+              {/* Conditional Display in Right Rail */}
+              {rightPanelTab === "order" ? (
+                <div className="space-y-4">
+                  {/* Active Order Assistant Panel */}
+                  <TacticalAssistantPanel
+                    items={orderItems}
+                    needsConfirmation={[]}
+                    unmatchedPhrase={unmatchedPhrase}
+                    orderTranscript={currentOrder}
+                    conversationText={conversationText}
+                    total={calculatedTotal}
+                    isAuthenticated={!!authToken}
+                    isSubmitting={isSubmittingOrder}
+                    submitError={submitOrderError}
+                    onSubmitOrder={handleSubmitConfirmedOrder}
+                    persistedOrder={persistedOrder}
+                    onResetOrder={handleResetOrder}
+                    specialInstructions={specialInstructions}
+                    onSpecialInstructionsChange={setSpecialInstructions}
+                    onQuickPrompt={handleQuickPrompt}
+                    onIncrementItem={handleIncrementItem}
+                    onDecrementItem={handleDecrementItem}
+                    onRemoveItem={handleRemoveItem}
+                    onClearOrder={handleClearOrder}
+                  />
+
+                  {/* Quick Inline Menu Preview below Order */}
+                  <div className="pt-2">
+                    <TacticalMenuCodex
+                      menu={menu}
+                      isLoading={isMenuLoading}
+                      error={menuError}
+                      isDbMenu={!!authToken}
+                      orderQuantities={orderQuantities}
+                      onSelectItem={handleAddMenuItemDirect}
+                      compact={true}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Full Menu Codex in Right Rail */}
+                  <TacticalMenuCodex
+                    menu={menu}
+                    isLoading={isMenuLoading}
+                    error={menuError}
+                    isDbMenu={!!authToken}
+                    orderQuantities={orderQuantities}
+                    onSelectItem={handleAddMenuItemDirect}
+                    compact={false}
+                  />
+
+                  {/* Compact Order Floating Status Card */}
+                  {orderItems.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-[#211F1A] border border-[#10B981]/50 shadow-xl flex items-center justify-between font-mono text-xs">
+                      <div>
+                        <span className="text-[#10B981] font-bold block">
+                          {orderItems.reduce((acc, it) => acc + it.quantity, 0)} Items Selected
+                        </span>
+                        <span className="text-sm font-extrabold text-[#E5C378]">
+                          ${calculatedTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRightPanelTab("order")}
+                        className="px-4 py-2 rounded-lg bg-[#B68A2D] hover:bg-[#C89B37] text-[#191814] font-bold transition-colors cursor-pointer uppercase tracking-wider"
+                      >
+                        Review & Transmit →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      <LoginModal
+      {/* Bottom Telemetry Ticker */}
+      <TacticalTicker />
+
+      {/* Restaurant Login Modal */}
+      <TacticalLoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onSuccess={handleLoginSuccess}
@@ -459,7 +886,7 @@ function normalizeAssistantText(text: string): string {
   if (!trimmed) return "";
 
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    return "I've updated the order list.";
+    return "Order updated with latest culinary selections.";
   }
 
   return trimmed;

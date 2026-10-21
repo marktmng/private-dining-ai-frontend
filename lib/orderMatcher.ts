@@ -16,6 +16,7 @@ export interface MatchedOrderItem {
 export interface OrderMatchResult {
   items: MatchedOrderItem[];
   needsConfirmation: MatchedOrderItem[];
+  unmatchedPhrases?: string[];
   spokenTotal: string;
   total: number;
 }
@@ -84,13 +85,51 @@ export function normalizeText(value: string): string {
 }
 
 /**
+ * Strips conversational preambles/greetings and trailing politeness phrases.
+ */
+export function cleanSpeechUtterance(text: string): string {
+  if (!text) return "";
+  let cleaned = text.trim();
+
+  // Strip leading greetings and conversational fillers (e.g. "Halo.", "Hello,", "Hey", "Excuse me")
+  cleaned = cleaned.replace(
+    /^(?:halo|hallo|hello|hi|hey|hiya|good evening|good morning|good afternoon|excuse me|um|uh|er|ah|ok|okay|so|please)[,\s.]+/i,
+    ""
+  );
+
+  // Iteratively strip trailing polite phrases or closing statements (e.g. "please", "that's all", "thank you")
+  const trailingRegex =
+    /[,\s.]+(?:please|thanks|thank you|that'?s all|that is all|that'?s it|that is it|for now|that will be all|that'll be all|too|as well)[.?!]*$/i;
+  while (trailingRegex.test(cleaned)) {
+    cleaned = cleaned.replace(trailingRegex, "").trim();
+  }
+
+  return cleaned.trim();
+}
+
+/**
+ * Checks if user speech contains explicit order intent.
+ */
+export function hasExplicitOrderIntent(text: string): boolean {
+  const cleaned = cleanSpeechUtterance(text);
+  const norm = normalizeText(cleaned);
+
+  const intentPatterns = [
+    /\b(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have)\b/,
+    /\b(?:please bring|bring me|give me|add|order|we'll have|we will have|we'd like|we would like)\b/,
+    /\b(?:put me down for|i want to order|i want|we want)\b/,
+    /^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+[a-z]/i,
+  ];
+
+  return intentPatterns.some((p) => p.test(norm));
+}
+
+/**
  * Checks if a sentence is an inquiry/question rather than an order placement.
  */
 export function isQuestionOrInquiry(text: string): boolean {
   const norm = normalizeText(text);
   if (!norm) return false;
-
-  if (text.includes("?")) return true;
 
   const inquiryTriggers = [
     /\b(what is|what's|what are|what do you have|what drinks|what food)\b/,
@@ -103,7 +142,17 @@ export function isQuestionOrInquiry(text: string): boolean {
     /\b(how big is|what size is|how is it cooked|what comes with)\b/,
   ];
 
-  return inquiryTriggers.some((trigger) => trigger.test(norm));
+  if (inquiryTriggers.some((trigger) => trigger.test(norm))) {
+    return true;
+  }
+
+  // If text contains explicit ordering intent like "can I have", "can I get", "could I have", "i'd like",
+  // it is an ORDER, NOT an inquiry, even if transcribed with a question mark "?"!
+  if (hasExplicitOrderIntent(text)) {
+    return false;
+  }
+
+  return text.includes("?");
 }
 
 /**
@@ -254,21 +303,7 @@ export function parseRemovalOrNegation(
   return { isRemoval: false };
 }
 
-/**
- * Checks if user speech contains explicit order intent.
- */
-export function hasExplicitOrderIntent(text: string): boolean {
-  const norm = normalizeText(text);
 
-  const intentPatterns = [
-    /\b(i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have)\b/,
-    /\b(please bring|bring me|give me|add|order|we'll have|we will have|we'd like|we would like)\b/,
-    /\b(put me down for|i want to order|i want|we want)\b/,
-    /^\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+[a-z]/i,
-  ];
-
-  return intentPatterns.some((p) => p.test(norm));
-}
 
 /**
  * Check if a word/query is a known ambiguous generic term matching multiple items.
@@ -416,33 +451,38 @@ export function matchOrderFromTranscript(
     };
   }
 
-  // Split transcript into discrete statements
+  // Split transcript into discrete statements by newline, semicolon, 'and', or sentence boundaries
   const statements = transcript
-    .split(/\n|\band\b|;/gi)
+    .split(/(?:\r?\n|;|\band\b|(?<!\d)\.(?!\d))+/gi)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
   const draftItems = new Map<string, MatchedOrderItem>();
   const needsConfirmationMap = new Map<string, MatchedOrderItem>();
+  const unmatchedPhrases: string[] = [];
   let lastOrderedItemId: string | null = null;
 
-  for (const statement of statements) {
+  for (const rawStatement of statements) {
+    const cleanStmt = cleanSpeechUtterance(rawStatement);
+    if (!cleanStmt && !rawStatement) continue;
+
     // 1. Check for cancellation / clear
-    if (isCancellationOrClear(statement)) {
+    if (isCancellationOrClear(cleanStmt) || isCancellationOrClear(rawStatement)) {
       draftItems.clear();
       needsConfirmationMap.clear();
+      unmatchedPhrases.length = 0;
       lastOrderedItemId = null;
       continue;
     }
 
     // 2. Check for Inquiry / Question (e.g. "Do you have sparkling water?")
     // Inquiries MUST NEVER add or modify draft items!
-    if (isQuestionOrInquiry(statement)) {
+    if (isQuestionOrInquiry(cleanStmt) || isQuestionOrInquiry(rawStatement)) {
       continue;
     }
 
     // 3. Check for Correction (e.g. "make that two, not three")
-    const correction = parseCorrection(statement);
+    const correction = parseCorrection(cleanStmt);
     if (correction.isCorrection && correction.targetQuantity !== undefined) {
       let targetItem: MatchedOrderItem | undefined = undefined;
 
@@ -468,7 +508,7 @@ export function matchOrderFromTranscript(
     }
 
     // 4. Check for Removal / Negation (e.g. "I don't want fries", "no fries")
-    const removal = parseRemovalOrNegation(statement, menu);
+    const removal = parseRemovalOrNegation(cleanStmt, menu);
     if (removal.isRemoval && removal.matchedItem) {
       const key = removal.matchedItem.id || removal.matchedItem.name;
       const existing = draftItems.get(key);
@@ -484,20 +524,20 @@ export function matchOrderFromTranscript(
     }
 
     // 5. Must have explicit ordering intent or clear quantity + item structure
-    if (!hasExplicitOrderIntent(statement)) {
+    if (!hasExplicitOrderIntent(rawStatement) && !hasExplicitOrderIntent(cleanStmt)) {
       // If there's no explicit order intent, do not add random words from casual conversation
       continue;
     }
 
     // 6. Extract quantity, cooking preferences, and menu item phrase
-    const { notes, cleanedText } = extractNotes(statement);
+    const { notes, cleanedText } = extractNotes(cleanStmt);
 
     // Extract leading quantity
     let quantity = 1;
     let itemPhrase = cleanedText;
 
     const qtyMatch = cleanedText.match(
-      /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|please bring|give me|add|order)?\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
+      /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|please bring|bring me|give me|add|order)?\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|pair|a|an)\s+(?:orders?|portions?|plates?|glasses?|bottles?|of\s+)?(.*)$/i
     );
 
     if (qtyMatch) {
@@ -510,11 +550,17 @@ export function matchOrderFromTranscript(
       // Strip conversational prefixes
       itemPhrase = cleanedText
         .replace(
-          /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|please bring|give me|add|order)\s+/i,
+          /^(?:i'll have|i will have|i'd like|i would like|can i get|can i have|could i get|could i have|may i have|may i get|can we get|can we have|could we get|could we have|please bring|bring me|give me|add|order)\s+/i,
           ""
         )
         .trim();
     }
+
+    // Strip leading "the", "a", or "an" from item phrase (e.g. "the Wagyu Ribeye" -> "Wagyu Ribeye")
+    itemPhrase = itemPhrase.replace(/^(?:the|an?)\s+/i, "").trim();
+
+    // Clean any trailing filler again from itemPhrase
+    itemPhrase = cleanSpeechUtterance(itemPhrase);
 
     // Check for Ambiguity (e.g. "fillet" matching multiple items)
     const ambiguity = checkAmbiguity(itemPhrase, menu);
@@ -541,6 +587,9 @@ export function matchOrderFromTranscript(
     // Match against active menu
     const match = findBestMenuMatch(itemPhrase, menu);
     if (!match || match.confidence < 0.75) {
+      if (itemPhrase && itemPhrase.length >= 2) {
+        unmatchedPhrases.push(itemPhrase);
+      }
       continue;
     }
 
@@ -581,6 +630,7 @@ export function matchOrderFromTranscript(
   return {
     items,
     needsConfirmation,
+    unmatchedPhrases,
     spokenTotal:
       total > 0
         ? `This is the total after calculating: $${total.toFixed(2)}.`
