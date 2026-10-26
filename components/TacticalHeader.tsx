@@ -172,7 +172,21 @@ export default function TacticalHeader({
               }`}
             >
               <Utensils className="w-3 h-3 text-[#B68A2D]" />
-              <span>Dine</span>
+              <span>Voice AI</span>
+            </Link>
+            <Link
+              href="/dine/test-venue-saas/TABLE-01"
+              className="px-2.5 py-1 rounded flex items-center gap-1.5 text-[#F3EFE6]/70 hover:text-[#F3EFE6] hover:bg-[#28251E] transition-colors"
+            >
+              <Utensils className="w-3 h-3 text-[#E5C378]" />
+              <span>QR Dine</span>
+            </Link>
+            <Link
+              href="/kiosk/test-venue-saas/KIOSK-01"
+              className="px-2.5 py-1 rounded flex items-center gap-1.5 text-[#F3EFE6]/70 hover:text-[#F3EFE6] hover:bg-[#28251E] transition-colors"
+            >
+              <Utensils className="w-3 h-3 text-cyan-400" />
+              <span>Kiosk</span>
             </Link>
             <Link
               href="/kitchen"
@@ -223,6 +237,12 @@ export default function TacticalHeader({
             <div className="flex items-center gap-2 bg-[#201E19] border border-[#B68A2D]/30 rounded-lg px-3 py-1 font-mono text-xs">
               <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse" />
               <span className="text-[#F3EFE6]">VIP SUITE 01</span>
+              <Link
+                href="/register"
+                className="px-2.5 py-1 bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#12110D] font-bold rounded text-[11px] transition-all hover:opacity-95 shadow-sm"
+              >
+                Register
+              </Link>
               <button
                 type="button"
                 onClick={onOpenLogin}

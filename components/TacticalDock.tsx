@@ -5,29 +5,32 @@ import {
   UtensilsCrossed,
   Receipt,
   Wine,
-  BellRing,
+  QrCode,
   RotateCcw,
   Sparkles,
+  Radio,
 } from "lucide-react";
 
-export type ActiveView = "dial" | "menu" | "order" | "sommelier";
+export type ActiveView = "dial" | "menu" | "order" | "sommelier" | "track";
 
 interface Props {
   activeView: ActiveView;
   onSelectView: (view: ActiveView) => void;
   orderCount?: number;
+  hasActiveOrder?: boolean;
+  activeOrderStatus?: string;
   onCalibrate?: () => void;
-  onCallWaiter?: () => void;
-  isCallingWaiter?: boolean;
+  onOpenTablePass?: () => void;
 }
 
 export default function TacticalDock({
   activeView,
   onSelectView,
   orderCount = 0,
+  hasActiveOrder = false,
+  activeOrderStatus,
   onCalibrate,
-  onCallWaiter,
-  isCallingWaiter = false,
+  onOpenTablePass,
 }: Props) {
   const navItems = [
     {
@@ -37,6 +40,17 @@ export default function TacticalDock({
       badge: null,
       color: "hover:text-[#22D3EE]",
     },
+    ...(hasActiveOrder
+      ? [
+          {
+            id: "track" as const,
+            label: "HUD Tracker",
+            icon: Radio,
+            badge: activeOrderStatus || "LIVE",
+            color: "text-[#22D3EE] hover:text-[#06B6D4]",
+          },
+        ]
+      : []),
     {
       id: "menu" as const,
       label: "Menu Codex",
@@ -88,7 +102,7 @@ export default function TacticalDock({
                 title={item.label}
                 className={`
                   relative w-12 h-12 rounded-xl flex items-center justify-center
-                  transition-all duration-200 group
+                  transition-all duration-200 group cursor-pointer
                   ${
                     isActive
                       ? "bg-[#2A261E] border border-[#B68A2D] text-[#E5C378] shadow-[0_0_15px_rgba(182,138,45,0.35)] scale-105"
@@ -116,22 +130,20 @@ export default function TacticalDock({
 
         {/* Bottom Utility Actions */}
         <div className="flex flex-col items-center gap-3">
-          {/* Waiter Call Button */}
-          <button
-            type="button"
-            onClick={onCallWaiter}
-            title="Call Waiter"
-            className={`
-              relative w-11 h-11 rounded-xl flex items-center justify-center border transition-all
-              ${
-                isCallingWaiter
-                  ? "bg-red-950/80 border-red-500 text-red-300 animate-pulse"
-                  : "bg-[#211F1A] border-[#B68A2D]/30 text-[#B68A2D] hover:border-[#B68A2D] hover:text-[#E5C378]"
-              }
-            `}
-          >
-            <BellRing className="w-4 h-4" />
-          </button>
+          {/* Table Pass & Companion QR */}
+          {onOpenTablePass && (
+            <button
+              type="button"
+              onClick={onOpenTablePass}
+              title="Digital Table Pass & Companion QR"
+              className="relative w-11 h-11 rounded-xl flex items-center justify-center bg-[#211F1A] border border-[#B68A2D]/30 text-[#B68A2D] hover:border-[#B68A2D] hover:text-[#E5C378] hover:bg-[#25221B] transition-all group cursor-pointer"
+            >
+              <QrCode className="w-4 h-4" />
+              <span className="absolute left-16 px-2.5 py-1 bg-[#211F1A] border border-[#B68A2D]/40 text-[#F3EFE6] font-mono text-xs rounded opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl z-50">
+                Table Pass & QR
+              </span>
+            </button>
+          )}
 
           {/* Reboot / Calibrate Button */}
           {onCalibrate && (
@@ -139,7 +151,7 @@ export default function TacticalDock({
               type="button"
               onClick={onCalibrate}
               title="Calibrate System Sensors"
-              className="w-11 h-11 rounded-xl flex items-center justify-center bg-[#211F1A] border border-[#B68A2D]/30 text-[#B68A2D]/70 hover:text-[#B68A2D] hover:border-[#B68A2D] transition-colors"
+              className="w-11 h-11 rounded-xl flex items-center justify-center bg-[#211F1A] border border-[#B68A2D]/30 text-[#B68A2D]/70 hover:text-[#B68A2D] hover:border-[#B68A2D] transition-colors cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -164,7 +176,7 @@ export default function TacticalDock({
               type="button"
               onClick={() => onSelectView(item.id)}
               className={`
-                relative flex flex-col items-center justify-center py-1 px-3 rounded-lg transition-colors
+                relative flex flex-col items-center justify-center py-1 px-3 rounded-lg transition-colors cursor-pointer
                 ${
                   isActive
                     ? "text-[#E5C378]"
@@ -190,17 +202,17 @@ export default function TacticalDock({
           );
         })}
 
-        {/* Waiter Call Button */}
-        <button
-          type="button"
-          onClick={onCallWaiter}
-          className={`flex flex-col items-center py-1 px-2 ${
-            isCallingWaiter ? "text-red-400 animate-pulse" : "text-[#B68A2D]/80"
-          }`}
-        >
-          <BellRing className="w-5 h-5" />
-          <span className="font-mono text-[10px] tracking-wider mt-1">Call</span>
-        </button>
+        {/* Table Pass & Companion QR */}
+        {onOpenTablePass && (
+          <button
+            type="button"
+            onClick={onOpenTablePass}
+            className="flex flex-col items-center py-1 px-2 text-[#B68A2D]/80 hover:text-[#E5C378] transition-colors cursor-pointer"
+          >
+            <QrCode className="w-5 h-5" />
+            <span className="font-mono text-[10px] tracking-wider mt-1">Pass</span>
+          </button>
+        )}
       </nav>
     </>
   );

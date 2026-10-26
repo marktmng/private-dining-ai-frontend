@@ -20,6 +20,8 @@ export interface TranscriptUpdate {
 
 export interface RealtimeVoiceCallbacks {
   authToken?: string;
+  restaurantSlug?: string;
+  sessionToken?: string;
   onAssistantSpeakingChange?: (isSpeaking: boolean) => void;
   onDisconnected?: () => void;
   onError?: (message: string) => void;
@@ -351,7 +353,11 @@ export async function startRealtimeVoiceSession(
 
     callbacks.onStatusChange?.("Connecting to AI waiter...");
 
-    const token = await fetchRealtimeToken(callbacks.authToken);
+    const token = await fetchRealtimeToken(
+      callbacks.authToken,
+      callbacks.restaurantSlug,
+      callbacks.sessionToken
+    );
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
@@ -377,7 +383,11 @@ export async function startRealtimeVoiceSession(
   }
 }
 
-async function fetchRealtimeToken(authToken?: string): Promise<{
+async function fetchRealtimeToken(
+  authToken?: string,
+  restaurantSlug?: string,
+  sessionToken?: string
+): Promise<{
   model?: string;
   token: string;
 }> {
@@ -385,8 +395,12 @@ async function fetchRealtimeToken(authToken?: string): Promise<{
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
   }
+  if (sessionToken) {
+    headers["x-guest-session"] = sessionToken;
+  }
 
-  const response = await fetch(`${API_URL}/realtime/token`, {
+  const query = restaurantSlug ? `?slug=${encodeURIComponent(restaurantSlug)}` : "";
+  const response = await fetch(`${API_URL}/realtime/token${query}`, {
     cache: "no-store",
     headers,
   });
