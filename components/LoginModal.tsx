@@ -22,6 +22,19 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+
+    if (!email.trim() || !password) {
+      setError("Please enter both email and password.");
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(email.trim())) {
+      setError("Please enter a valid email address (e.g. name@domain.com).");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -116,15 +129,17 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
             />
           </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <button
-              type="button"
-              onClick={handleQuickFill}
-              className="text-[11px] text-[#B68A2D] hover:text-[#E5C378] underline cursor-pointer"
-            >
-              Fill Restaurant A Demo Credentials
-            </button>
-          </div>
+          {process.env.NODE_ENV !== "production" && (
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={handleQuickFill}
+                className="text-[11px] text-[#B68A2D] hover:text-[#E5C378] underline cursor-pointer"
+              >
+                Fill Restaurant A Demo Credentials (Dev)
+              </button>
+            </div>
+          )}
 
           <div className="pt-2 flex gap-3">
             <button
@@ -151,6 +166,19 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: Props) {
                 </>
               )}
             </button>
+          </div>
+
+          <div className="pt-3 text-center border-t border-[#B68A2D]/20">
+            <p className="text-[11px] text-neutral-400 font-sans">
+              Need to register a new venue?{" "}
+              <a
+                href="/register"
+                onClick={onClose}
+                className="text-[#E5C378] hover:underline font-bold"
+              >
+                Register Business in 60s →
+              </a>
+            </p>
           </div>
         </form>
       </div>

@@ -5,20 +5,47 @@ import TacticalHeader from "@/components/TacticalHeader";
 import TacticalLoginModal from "@/components/LoginModal";
 import TacticalTicker from "@/components/TacticalTicker";
 import {
+  createCategory,
+  createLocation,
   createMenuItem,
+  createModifierGroup,
+  deleteCategory,
+  deleteLocation,
   deleteMenuItem,
+  getAnalyticsCharts,
+  getAnalyticsOverview,
+  getAiInsights,
+  getCategories,
+  getExportAnalyticsCsvUrl,
   getFullMenus,
+  getLocationQr,
+  getLocations,
   getMe,
+  getModifierGroups,
   getOrders,
+  refundPayment,
+  updateCategory,
+  updateLocation,
   updateMenuItem,
   updateOrderStatus,
+  updateRestaurantMe,
+  assignItemModifiers,
 } from "@/lib/api";
 import type {
+  AiInsightItem,
+  AnalyticsCharts,
+  AnalyticsOverview,
   AuthUser,
+  BusinessType,
+  Category,
   CreateMenuItemPayload,
+  LocationType,
   MenuItem,
   MenuWithItems,
+  ModifierGroup,
+  OrderingLocation,
   PersistedOrder,
+  PublicRestaurantInfo,
 } from "@/types/order";
 import {
   BarChart3,
@@ -38,13 +65,42 @@ import {
   FileText,
   X,
   Sparkles,
+  MapPin,
+  QrCode,
+  Layers,
+  Settings,
+  Download,
+  Percent,
+  TrendingUp,
+  CreditCard,
+  Users,
+  Check,
+  Building,
+  ChefHat,
 } from "lucide-react";
 
 const TOKEN_STORAGE_KEY = "aivora_auth_token";
 
-type AdminTab = "ORDERS" | "MENU";
-type StatusFilter = "ALL" | "INCOMING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
-type TimeFilter = "ALL" | "TODAY" | "WEEK";
+type AdminTab =
+  | "ORDERS"
+  | "MENU"
+  | "CATEGORIES"
+  | "MODIFIERS"
+  | "LOCATIONS"
+  | "ANALYTICS"
+  | "SETTINGS";
+
+const BUSINESS_TYPES: BusinessType[] = [
+  "RESTAURANT",
+  "HOTEL",
+  "CAFE",
+  "ICE_CREAM_SHOP",
+  "FOOD_KIOSK",
+  "FOOD_TRUCK",
+  "TAKEAWAY",
+  "SNACK_SHOP",
+  "OTHER",
+];
 
 export default function AdminPage() {
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -54,33 +110,83 @@ export default function AdminPage() {
 
   const [activeTab, setActiveTab] = useState<AdminTab>("ORDERS");
 
-  // Orders State
+  // ==========================================
+  // 1. ORDERS STATE
+  // ==========================================
   const [orders, setOrders] = useState<PersistedOrder[]>([]);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("ALL");
-  const [filterReferenceTime, setFilterReferenceTime] = useState<number>(0);
-
-  // Selected Order for Modal Detail Inspection
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>("ALL");
   const [inspectedOrder, setInspectedOrder] = useState<PersistedOrder | null>(null);
 
-  // Menu State
+  // ==========================================
+  // 2. MENU & CATEGORIES STATE
+  // ==========================================
   const [menus, setMenus] = useState<MenuWithItems[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
-  const [menuError, setMenuError] = useState<string | null>(null);
 
-  // Edit / Create Menu Item Modal
+  // Menu Item Modal
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<{ menuId: string; item?: MenuItem } | null>(null);
   const [itemFormName, setItemFormName] = useState("");
-  const [itemFormCategory, setItemFormCategory] = useState("Mains");
+  const [itemFormCategoryId, setItemFormCategoryId] = useState("");
   const [itemFormPrice, setItemFormPrice] = useState("");
   const [itemFormDescription, setItemFormDescription] = useState("");
-  const [isSavingItem, setIsSavingItem] = useState(false);
-  const [itemSaveError, setItemSaveError] = useState<string | null>(null);
+  const [itemFormPrepTime, setItemFormPrepTime] = useState("");
+  const [itemFormDietary, setItemFormDietary] = useState("");
+  const [itemFormSelectedModGroups, setItemFormSelectedModGroups] = useState<string[]>([]);
 
-  // 1. Check existing saved token on mount
+  // Category Modal
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [categoryFormName, setCategoryFormName] = useState("");
+  const [categoryFormDescription, setCategoryFormDescription] = useState("");
+
+  // Modifier Group Modal
+  const [isModModalOpen, setIsModModalOpen] = useState(false);
+  const [modFormName, setModFormName] = useState("");
+  const [modFormRequired, setModFormRequired] = useState(false);
+  const [modFormMax, setModFormMax] = useState(1);
+  const [modFormOptionName1, setModFormOptionName1] = useState("");
+  const [modFormOptionPrice1, setModFormOptionPrice1] = useState("0");
+  const [modFormOptionName2, setModFormOptionName2] = useState("");
+  const [modFormOptionPrice2, setModFormOptionPrice2] = useState("0");
+
+  // ==========================================
+  // 3. LOCATIONS & QR STATE
+  // ==========================================
+  const [locations, setLocations] = useState<OrderingLocation[]>([]);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [locFormName, setLocFormName] = useState("");
+  const [locFormCode, setLocFormCode] = useState("");
+  const [locFormType, setLocFormType] = useState<LocationType>("TABLE");
+  const [locFormFulfillment, setLocFormFulfillment] = useState("TABLE_SERVICE");
+  const [qrModalData, setQrModalData] = useState<{ qrDataUrl: string; targetUrl: string; locName: string } | null>(null);
+
+  // ==========================================
+  // 4. ANALYTICS & AI INSIGHTS STATE
+  // ==========================================
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("this_month");
+  const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
+  const [analyticsCharts, setAnalyticsCharts] = useState<AnalyticsCharts | null>(null);
+  const [aiInsights, setAiInsights] = useState<AiInsightItem[]>([]);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
+
+  // ==========================================
+  // 5. BUSINESS SETTINGS STATE
+  // ==========================================
+  const [settingsProfile, setSettingsProfile] = useState<PublicRestaurantInfo | null>(null);
+  const [businessName, setBusinessName] = useState("");
+  const [businessType, setBusinessType] = useState<BusinessType>("RESTAURANT");
+  const [currency, setCurrency] = useState("USD");
+  const [taxRatePercent, setTaxRatePercent] = useState("10");
+  const [timezone, setTimezone] = useState("America/New_York");
+  const [orderingEnabled, setOrderingEnabled] = useState(true);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+  // 1. Check saved auth token on mount
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!savedToken) return;
@@ -94,268 +200,272 @@ export default function AdminPage() {
           name: data.user.name,
           restaurantId: data.restaurant?.id || "",
           restaurantName: data.restaurant?.name || "Restaurant A",
+          restaurantSlug: data.restaurant?.slug || "",
+          businessType: data.restaurant?.businessType || "RESTAURANT",
+          currency: data.restaurant?.currency || "USD",
           role: data.role,
         });
         if (data.restaurant?.name) {
           setRestaurantName(data.restaurant.name);
+          setBusinessName(data.restaurant.name);
+          if (data.restaurant.businessType) {
+            setBusinessType(data.restaurant.businessType as BusinessType);
+          }
+          if (data.restaurant.currency) setCurrency(data.restaurant.currency);
+          if (data.restaurant.taxRate !== undefined) {
+            setTaxRatePercent((Number(data.restaurant.taxRate) * 100).toString());
+          }
+          if (data.restaurant.timezone) setTimezone(data.restaurant.timezone);
+          if (data.restaurant.orderingEnabled !== undefined) {
+            setOrderingEnabled(data.restaurant.orderingEnabled);
+          }
         }
       })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : "Session expired";
-        console.warn("Admin: Stored token is invalid:", msg);
+      .catch(() => {
         localStorage.removeItem(TOKEN_STORAGE_KEY);
         setAuthToken(null);
         setCurrentUser(null);
       });
   }, []);
 
-  // 2. Fetch Orders for authenticated restaurant or default restaurant
-  const fetchOrders = useCallback(async (token?: string, silent = false) => {
-    if (!silent) setIsOrdersLoading(true);
-    setOrdersError(null);
-    try {
-      const data = await getOrders(token);
-      setOrders(data);
-      setFilterReferenceTime(Date.now());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load orders.";
-      if (!silent) setOrdersError(msg);
-    } finally {
-      if (!silent) setIsOrdersLoading(false);
-    }
-  }, []);
+  // 2. Fetch data based on active tab
+  const refreshCurrentData = useCallback(() => {
+    if (!authToken) return;
 
-  // 3. Fetch Menus for authenticated restaurant
-  const fetchMenus = useCallback(async (token: string, silent = false) => {
-    if (!silent) setIsMenuLoading(true);
-    setMenuError(null);
-    try {
-      const data = await getFullMenus(token);
-      setMenus(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load menus.";
-      if (!silent) setMenuError(msg);
-    } finally {
-      if (!silent) setIsMenuLoading(false);
+    if (activeTab === "ORDERS") {
+      setIsOrdersLoading(true);
+      getOrders(authToken)
+        .then(setOrders)
+        .catch((e) => setOrdersError(e.message))
+        .finally(() => setIsOrdersLoading(false));
+    } else if (activeTab === "MENU" || activeTab === "CATEGORIES" || activeTab === "MODIFIERS") {
+      setIsMenuLoading(true);
+      Promise.all([
+        getFullMenus(authToken),
+        getCategories(authToken),
+        getModifierGroups(authToken),
+      ])
+        .then(([m, c, g]) => {
+          setMenus(m);
+          setCategories(c);
+          setModifierGroups(g);
+        })
+        .finally(() => setIsMenuLoading(false));
+    } else if (activeTab === "LOCATIONS") {
+      getLocations(authToken).then(setLocations);
+    } else if (activeTab === "ANALYTICS") {
+      setIsAnalyticsLoading(true);
+      Promise.all([
+        getAnalyticsOverview(authToken, analyticsPeriod),
+        getAnalyticsCharts(authToken, analyticsPeriod),
+        getAiInsights(authToken, analyticsPeriod),
+      ])
+        .then(([ov, ch, ins]) => {
+          setAnalyticsOverview(ov);
+          setAnalyticsCharts(ch);
+          setAiInsights(ins);
+        })
+        .finally(() => setIsAnalyticsLoading(false));
     }
-  }, []);
+  }, [authToken, activeTab, analyticsPeriod]);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      void fetchOrders(authToken ?? undefined);
-      if (authToken) {
-        void fetchMenus(authToken);
-      }
-    });
+    refreshCurrentData();
+  }, [refreshCurrentData]);
 
-    const interval = setInterval(() => {
-      void fetchOrders(authToken ?? undefined, true);
-    }, 4000);
+  // Auth Handlers
+  const handleLoginSuccess = (token: string, user: AuthUser) => {
+    setAuthToken(token);
+    setCurrentUser(user);
+    if (user.restaurantName) setRestaurantName(user.restaurantName);
+    refreshCurrentData();
+  };
 
-    return () => clearInterval(interval);
-  }, [authToken, fetchOrders, fetchMenus]);
-
-  const handleLoginSuccess = useCallback(
-    (token: string, user: AuthUser) => {
-      localStorage.setItem(TOKEN_STORAGE_KEY, token);
-      setAuthToken(token);
-      setCurrentUser(user);
-      if (user.restaurantName) {
-        setRestaurantName(user.restaurantName);
-      }
-      void fetchOrders(token);
-      void fetchMenus(token);
-    },
-    [fetchOrders, fetchMenus]
-  );
-
-  const handleSignOut = useCallback(() => {
+  const handleSignOut = () => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setAuthToken(null);
     setCurrentUser(null);
-    setOrders([]);
-    setMenus([]);
-  }, []);
-
-  // Filtered Orders
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      if (statusFilter === "INCOMING") {
-        const isIncoming =
-          order.status === "PENDING" ||
-          order.status === "CONFIRMED" ||
-          order.status === "SENT_TO_KITCHEN";
-        if (!isIncoming) return false;
-      } else if (statusFilter !== "ALL") {
-        if (order.status !== statusFilter) return false;
-      }
-
-      if (timeFilter !== "ALL" && filterReferenceTime > 0) {
-        const orderDate = new Date(order.createdAt).getTime();
-        if (timeFilter === "TODAY") {
-          const startOfToday = new Date(filterReferenceTime);
-          startOfToday.setHours(0, 0, 0, 0);
-          if (orderDate < startOfToday.getTime()) return false;
-        } else if (timeFilter === "WEEK") {
-          const sevenDaysAgo = filterReferenceTime - 7 * 24 * 60 * 60 * 1000;
-          if (orderDate < sevenDaysAgo) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [orders, statusFilter, timeFilter, filterReferenceTime]);
-
-  // Operational metrics
-  const operationalSummary = useMemo(() => {
-    const totalCount = orders.length;
-    const completedOrders = orders.filter((o) => o.status === "COMPLETED");
-    const activeOrders = orders.filter(
-      (o) => o.status !== "COMPLETED" && o.status !== "CANCELLED"
-    );
-    const cancelledOrders = orders.filter((o) => o.status === "CANCELLED");
-
-    const totalCompletedRevenue = completedOrders.reduce(
-      (sum, o) => sum + Number(o.total),
-      0
-    );
-
-    const grossVolume = orders
-      .filter((o) => o.status !== "CANCELLED")
-      .reduce((sum, o) => sum + Number(o.total), 0);
-
-    return {
-      totalCount,
-      completedCount: completedOrders.length,
-      activeCount: activeOrders.length,
-      cancelledCount: cancelledOrders.length,
-      totalCompletedRevenue,
-      grossVolume,
-    };
-  }, [orders]);
-
-  // Menu Item Actions
-  const handleOpenAddItem = (menuId: string) => {
-    setEditingItem({ menuId });
-    setItemFormName("");
-    setItemFormCategory("Mains");
-    setItemFormPrice("");
-    setItemFormDescription("");
-    setItemSaveError(null);
-    setIsItemModalOpen(true);
+    setRestaurantName("Restaurant A");
   };
 
-  const handleOpenEditItem = (menuId: string, item: MenuItem) => {
-    setEditingItem({ menuId, item });
-    setItemFormName(item.name);
-    setItemFormCategory(item.category || "Mains");
-    setItemFormPrice(item.price.toString());
-    setItemFormDescription(item.description || "");
-    setItemSaveError(null);
-    setIsItemModalOpen(true);
-  };
-
-  const handleSaveItem = async () => {
-    if (!authToken || !editingItem) return;
+  // Menu Item Modal Save
+  const handleSaveMenuItem = async () => {
+    if (!authToken || !editingItem || !itemFormName.trim() || !itemFormPrice) return;
     const priceNum = parseFloat(itemFormPrice);
-    if (!itemFormName.trim() || isNaN(priceNum) || priceNum <= 0) {
-      setItemSaveError("Please enter a valid item name and positive price.");
-      return;
-    }
-
-    setIsSavingItem(true);
-    setItemSaveError(null);
+    if (isNaN(priceNum) || priceNum <= 0) return;
 
     try {
       const payload: CreateMenuItemPayload = {
         name: itemFormName.trim(),
-        category: itemFormCategory.trim() || "Mains",
         price: priceNum,
         description: itemFormDescription.trim() || undefined,
-        active: true,
+        categoryId: itemFormCategoryId || null,
+        preparationTime: itemFormPrepTime ? parseInt(itemFormPrepTime) : undefined,
+        dietaryTags: itemFormDietary
+          .split(",")
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean),
       };
 
+      let savedItemId = "";
       if (editingItem.item?.id) {
-        await updateMenuItem(
-          editingItem.menuId,
-          editingItem.item.id,
-          payload,
-          authToken
-        );
+        const updated = await updateMenuItem(editingItem.menuId, editingItem.item.id, payload, authToken);
+        savedItemId = updated.id!;
       } else {
-        await createMenuItem(editingItem.menuId, payload, authToken);
+        const created = await createMenuItem(editingItem.menuId, payload, authToken);
+        savedItemId = created.id!;
+      }
+
+      // Assign modifiers
+      if (savedItemId && itemFormSelectedModGroups.length > 0) {
+        await assignItemModifiers(authToken, savedItemId, itemFormSelectedModGroups);
       }
 
       setIsItemModalOpen(false);
-      await fetchMenus(authToken, true);
+      refreshCurrentData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save menu item.";
-      setItemSaveError(msg);
-    } finally {
-      setIsSavingItem(false);
+      alert(err instanceof Error ? err.message : "Failed to save item");
     }
   };
 
-  const handleToggleItemActive = async (menuId: string, item: MenuItem) => {
-    if (!authToken || !item.id) return;
+  // Category Modal Save
+  const handleSaveCategory = async () => {
+    if (!authToken || !categoryFormName.trim()) return;
     try {
-      await updateMenuItem(
-        menuId,
-        item.id,
-        { active: !item.active },
-        authToken
-      );
-      await fetchMenus(authToken, true);
+      await createCategory(authToken, {
+        name: categoryFormName.trim(),
+        description: categoryFormDescription.trim() || undefined,
+      });
+      setIsCategoryModalOpen(false);
+      setCategoryFormName("");
+      setCategoryFormDescription("");
+      refreshCurrentData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to update item.";
-      setMenuError(msg);
+      alert(err instanceof Error ? err.message : "Failed to create category");
     }
   };
 
-  const handleDeleteItem = async (menuId: string, itemId: string) => {
-    if (!authToken) return;
-    if (!confirm("Are you sure you want to delete this menu item?")) return;
-
+  // Modifier Group Modal Save
+  const handleSaveModifierGroup = async () => {
+    if (!authToken || !modFormName.trim() || !modFormOptionName1.trim()) return;
     try {
-      await deleteMenuItem(menuId, itemId, authToken);
-      await fetchMenus(authToken, true);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to delete item.";
-      setMenuError(msg);
-    }
-  };
-
-  const handleAdminCancelOrder = async (orderId: string) => {
-    if (!authToken) return;
-    const reason = prompt("Enter cancellation reason for order:", "Cancelled by manager");
-    if (!reason) return;
-
-    try {
-      await updateOrderStatus(orderId, "CANCELLED", authToken, reason);
-      await fetchOrders(authToken, true);
-      if (inspectedOrder?.id === orderId) {
-        setInspectedOrder(null);
+      const options = [
+        { name: modFormOptionName1.trim(), priceAdjustment: parseFloat(modFormOptionPrice1) || 0 },
+      ];
+      if (modFormOptionName2.trim()) {
+        options.push({
+          name: modFormOptionName2.trim(),
+          priceAdjustment: parseFloat(modFormOptionPrice2) || 0,
+        });
       }
+
+      await createModifierGroup(authToken, {
+        name: modFormName.trim(),
+        required: modFormRequired,
+        maxSelections: modFormMax,
+        options,
+      });
+
+      setIsModModalOpen(false);
+      setModFormName("");
+      setModFormOptionName1("");
+      setModFormOptionName2("");
+      refreshCurrentData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to cancel order.";
-      setOrdersError(msg);
+      alert(err instanceof Error ? err.message : "Failed to create modifier group");
+    }
+  };
+
+  // Location Modal Save
+  const handleSaveLocation = async () => {
+    if (!authToken || !locFormName.trim() || !locFormCode.trim()) return;
+    try {
+      await createLocation(authToken, {
+        name: locFormName.trim(),
+        code: locFormCode.trim().toUpperCase(),
+        type: locFormType,
+        fulfillmentMethod: locFormFulfillment,
+      });
+      setIsLocationModalOpen(false);
+      setLocFormName("");
+      setLocFormCode("");
+      refreshCurrentData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to create location");
+    }
+  };
+
+  // Generate / View QR Code
+  const handleViewLocationQr = async (loc: OrderingLocation) => {
+    if (!authToken) return;
+    try {
+      const res = await getLocationQr(authToken, loc.id);
+      setQrModalData({
+        qrDataUrl: res.qrDataUrl,
+        targetUrl: res.targetUrl,
+        locName: loc.name,
+      });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to generate QR");
+    }
+  };
+
+  // Save Settings
+  const handleSaveSettings = async () => {
+    if (!authToken) return;
+    setIsSavingSettings(true);
+    setSettingsSuccess(false);
+    try {
+      await updateRestaurantMe(authToken, {
+        name: businessName.trim(),
+        businessType,
+        currency,
+        taxRate: (parseFloat(taxRatePercent) || 0) / 100,
+        timezone,
+        orderingEnabled,
+      });
+      setRestaurantName(businessName.trim());
+      setSettingsSuccess(true);
+      setTimeout(() => setSettingsSuccess(false), 4000);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to update business settings");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // Process Refund
+  const handleRefund = async (orderId: string, amount: number) => {
+    if (!authToken || !confirm(`Issue refund of $${amount.toFixed(2)}?`)) return;
+    try {
+      // Find completed payment
+      const ord = orders.find((o) => o.id === orderId);
+      const payment = ord?.payments?.find((p) => p.status === "COMPLETED");
+      if (!payment) {
+        alert("No completed payment found on this order.");
+        return;
+      }
+      await refundPayment(authToken, payment.id, amount, "Manager refund via portal");
+      alert("Refund processed successfully.");
+      refreshCurrentData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Refund failed");
     }
   };
 
   return (
     <main className="min-h-screen bg-[#191814] text-[#F3EFE6] tactical-grid flex flex-col justify-between select-none">
-      {/* Top Telemetry Header */}
       <TacticalHeader
         user={currentUser}
         restaurantName={restaurantName}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onSignOut={handleSignOut}
-        menuItemCount={menus.reduce((acc, m) => acc + (m.items?.length || 0), 0)}
+        menuItemCount={orders.length}
         currentPath="/admin"
       />
 
       <div className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
-        {/* Banner Header */}
+        {/* Manager Banner */}
         <div className="corner-bracket-container bg-[#1C1A15]/90 border border-[#B68A2D]/30 rounded-2xl p-4 sm:p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="corner-bracket-tl !w-3 !h-3" />
           <div className="corner-bracket-tr !w-3 !h-3" />
@@ -364,631 +474,1194 @@ export default function AdminPage() {
 
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-[#28251E] border border-[#B68A2D] flex items-center justify-center shadow-[0_0_15px_rgba(182,138,45,0.3)]">
-              <BarChart3 className="w-6 h-6 text-[#22D3EE]" />
+              <Building className="w-6 h-6 text-[#E5C378]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-mono text-lg sm:text-2xl font-extrabold tracking-widest uppercase text-[#F3EFE6]">
-                  Manager Operations Dashboard
+                  AIVORA SaaS Manager Cockpit
                 </h1>
-                <span className="font-mono text-[10px] bg-[#22D3EE]/20 text-[#22D3EE] border border-[#22D3EE]/40 px-2 py-0.5 rounded">
-                  PORTAL ACTIVE
+                <span className="font-mono text-[10px] bg-[#B68A2D]/20 text-[#E5C378] border border-[#B68A2D]/40 px-2 py-0.5 rounded font-bold uppercase">
+                  {businessType.replace(/_/g, " ")}
                 </span>
               </div>
               <p className="font-mono text-xs text-[#B68A2D]/80 mt-0.5">
-                Authoritative order telemetry, revenue audits, and live database menu pricing
+                Multi-Tenant Administration • Categories, items, modifiers, QR locations, payments & analytics
               </p>
             </div>
           </div>
 
-          {authToken && (
-            <div className="flex items-center bg-[#201E19] border border-[#B68A2D]/30 rounded-xl p-1 font-mono text-xs">
-              <button
-                type="button"
-                onClick={() => setActiveTab("ORDERS")}
-                className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === "ORDERS"
-                    ? "bg-[#B68A2D] text-[#191814] shadow-[0_0_12px_rgba(182,138,45,0.4)]"
-                    : "text-[#F3EFE6]/70 hover:text-white"
-                }`}
-              >
-                <Receipt className="w-3.5 h-3.5" />
-                <span>ORDERS & AUDIT</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("MENU")}
-                className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === "MENU"
-                    ? "bg-[#B68A2D] text-[#191814] shadow-[0_0_12px_rgba(182,138,45,0.4)]"
-                    : "text-[#F3EFE6]/70 hover:text-white"
-                }`}
-              >
-                <UtensilsCrossed className="w-3.5 h-3.5" />
-                <span>MENU & PRICING</span>
-              </button>
-            </div>
-          )}
-        </div>
+          <div className="flex items-center gap-2">
+            {locations.length > 0 && (
+              <>
+                <a
+                  href={`/dine/${currentUser?.restaurantSlug || "test-venue-saas"}/${locations[0].code}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hidden sm:flex px-3 py-1.5 rounded-xl bg-[#211F1A] hover:bg-[#28251E] border border-amber-500/40 text-amber-300 transition-colors items-center gap-1.5 font-mono text-xs"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Preview Guest QR ↗</span>
+                </a>
+                <a
+                  href="/kitchen"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hidden sm:flex px-3 py-1.5 rounded-xl bg-[#211F1A] hover:bg-[#28251E] border border-emerald-500/40 text-emerald-400 transition-colors items-center gap-1.5 font-mono text-xs"
+                >
+                  <ChefHat className="w-3.5 h-3.5" />
+                  <span>Kitchen KDS ↗</span>
+                </a>
+              </>
+            )}
 
-        {/* Unauthenticated State */}
-        {!authToken ? (
-          <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/40 bg-[#1C1A15]/90 p-12 text-center space-y-4 shadow-2xl max-w-lg mx-auto">
-            <div className="corner-bracket-tl !w-4 !h-4" />
-            <div className="corner-bracket-tr !w-4 !h-4" />
-            <div className="corner-bracket-bl !w-4 !h-4" />
-            <div className="corner-bracket-br !w-4 !h-4" />
-
-            <div className="w-16 h-16 rounded-full bg-[#25221B] border border-[#B68A2D] flex items-center justify-center mx-auto text-[#B68A2D] shadow-[0_0_20px_rgba(182,138,45,0.4)]">
-              <ShieldAlert className="w-8 h-8" />
-            </div>
-            <h2 className="font-mono text-lg font-bold uppercase tracking-wider text-[#F3EFE6]">
-              Manager Authentication Required
-            </h2>
-            <p className="font-mono text-xs text-[#B68A2D]/80 leading-relaxed">
-              Please sign in with Restaurant A credentials (Owner/Admin) to audit live financial streams, review tickets, and modify menu items.
-            </p>
             <button
-              type="button"
-              onClick={() => setIsLoginModalOpen(true)}
-              className="mt-2 px-6 py-2.5 rounded-xl font-mono text-xs font-bold bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#191814] shadow-[0_0_20px_rgba(182,138,45,0.4)] hover:opacity-95 transition-all cursor-pointer uppercase tracking-wider"
+              onClick={refreshCurrentData}
+              className="px-3.5 py-1.5 rounded-xl bg-[#211F1A] hover:bg-[#28251E] border border-[#B68A2D]/40 text-[#E5C378] transition-colors flex items-center gap-1.5 font-mono text-xs cursor-pointer"
             >
-              Sign In to Manager Portal
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>SYNC DATA</span>
             </button>
           </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Operational Summary Telemetry Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/25 p-4 sm:p-5 space-y-1 shadow-md">
-                <div className="corner-bracket-tl !w-2.5 !h-2.5" />
-                <div className="corner-bracket-tr !w-2.5 !h-2.5" />
-                <span className="font-mono text-[10px] text-[#B68A2D] uppercase tracking-wider block">
-                  Total Tickets
-                </span>
-                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#F3EFE6]">
-                  {operationalSummary.totalCount}
-                </p>
-                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Authoritative DB records</p>
-              </div>
+        </div>
 
-              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#F59E0B]/30 p-4 sm:p-5 space-y-1 shadow-md">
-                <div className="corner-bracket-tl !w-2.5 !h-2.5 !border-[#F59E0B]" />
-                <div className="corner-bracket-tr !w-2.5 !h-2.5 !border-[#F59E0B]" />
-                <span className="font-mono text-[10px] text-[#F59E0B] uppercase tracking-wider block">
-                  Active In Kitchen
-                </span>
-                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#F59E0B]">
-                  {operationalSummary.activeCount}
-                </p>
-                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Cooking & awaiting service</p>
-              </div>
+        {/* Navigation Tabs Bar */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-[#B68A2D]/20 font-mono text-xs">
+          <button
+            onClick={() => setActiveTab("ORDERS")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "ORDERS"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>ORDERS</span>
+          </button>
 
-              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#10B981]/30 p-4 sm:p-5 space-y-1 shadow-md">
-                <div className="corner-bracket-tl !w-2.5 !h-2.5 !border-[#10B981]" />
-                <div className="corner-bracket-tr !w-2.5 !h-2.5 !border-[#10B981]" />
-                <span className="font-mono text-[10px] text-[#10B981] uppercase tracking-wider block">
-                  Fulfilled Orders
-                </span>
-                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#10B981]">
-                  {operationalSummary.completedCount}
-                </p>
-                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Served & completed</p>
-              </div>
+          <button
+            onClick={() => setActiveTab("CATEGORIES")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "CATEGORIES"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>CATEGORIES</span>
+          </button>
 
-              <div className="corner-bracket-container rounded-2xl bg-[#1C1A15] border border-[#22D3EE]/30 p-4 sm:p-5 space-y-1 shadow-md">
-                <div className="corner-bracket-tl !w-2.5 !h-2.5 !border-[#22D3EE]" />
-                <div className="corner-bracket-tr !w-2.5 !h-2.5 !border-[#22D3EE]" />
-                <span className="font-mono text-[10px] text-[#22D3EE] uppercase tracking-wider block">
-                  Gross Order Volume
-                </span>
-                <p className="font-mono text-2xl sm:text-3xl font-extrabold text-[#E5C378]">
-                  ${operationalSummary.grossVolume.toFixed(2)}
-                </p>
-                <p className="font-mono text-[9px] text-[#F3EFE6]/50">Server verified revenue</p>
-              </div>
+          <button
+            onClick={() => setActiveTab("MENU")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "MENU"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <UtensilsCrossed className="w-4 h-4" />
+            <span>MENU ITEMS</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("MODIFIERS")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "MODIFIERS"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>MODIFIERS</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("LOCATIONS")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "LOCATIONS"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <QrCode className="w-4 h-4" />
+            <span>LOCATIONS & QR</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("ANALYTICS")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "ANALYTICS"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>ANALYTICS & AI</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("SETTINGS")}
+            className={`px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 ${
+              activeTab === "SETTINGS"
+                ? "bg-[#E5C378] text-[#191814] shadow-md"
+                : "bg-[#211F1A] text-neutral-400 hover:text-white border border-[#B68A2D]/20"
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            <span>SETTINGS</span>
+          </button>
+        </div>
+
+        {/* ========================================================= */}
+        {/* TAB 1: ORDERS & PAYMENTS AUDIT                           */}
+        {/* ========================================================= */}
+        {activeTab === "ORDERS" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-sm font-mono font-bold text-neutral-300 uppercase">
+                Active Tenant Orders ({orders.length})
+              </h2>
             </div>
 
-            {/* TAB 1: ORDERS & AUDIT */}
-            {activeTab === "ORDERS" ? (
-              <div className="space-y-6">
-                {ordersError && (
-                  <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 font-mono text-xs">
-                    {ordersError}
-                  </div>
-                )}
-
-                {/* Filters */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#1C1A15]/80 border border-[#B68A2D]/25 rounded-2xl p-4 font-mono text-xs">
-                  {/* Status Filter */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[#B68A2D] mr-1 font-bold">STATUS:</span>
-                    {(["ALL", "INCOMING", "PREPARING", "READY", "COMPLETED", "CANCELLED"] as StatusFilter[]).map(
-                      (st) => (
-                        <button
-                          key={st}
-                          type="button"
-                          onClick={() => setStatusFilter(st)}
-                          className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                            statusFilter === st
-                              ? "bg-[#B68A2D] text-[#191814]"
-                              : "bg-[#211F1A] text-[#F3EFE6]/70 hover:text-white border border-[#B68A2D]/20"
-                          }`}
-                        >
-                          {st}
-                        </button>
-                      )
-                    )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {orders.map((ord) => (
+                <div
+                  key={ord.id}
+                  className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 font-mono text-xs space-y-3 shadow-lg"
+                >
+                  <div className="flex justify-between items-start border-b border-[#B68A2D]/20 pb-2">
+                    <div>
+                      <span className="font-bold text-[#E5C378]">
+                        #{ord.orderNumber || ord.id.slice(0, 6)}
+                      </span>
+                      <p className="text-[10px] text-neutral-400">
+                        {ord.location?.name || "Direct Guest"} • {ord.orderChannel || "QR"}
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-amber-400 font-bold text-[10px]">
+                      {ord.status}
+                    </span>
                   </div>
 
-                  {/* Time Filter */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[#B68A2D] mr-1 font-bold">PERIOD:</span>
-                    {(["ALL", "TODAY", "WEEK"] as TimeFilter[]).map((period) => (
-                      <button
-                        key={period}
-                        type="button"
-                        onClick={() => setTimeFilter(period)}
-                        className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                          timeFilter === period
-                            ? "bg-[#2A261E] text-[#E5C378] border border-[#B68A2D]"
-                            : "bg-[#211F1A] text-[#F3EFE6]/60 hover:text-white border border-[#B68A2D]/20"
-                        }`}
-                      >
-                        {period === "ALL" ? "ALL TIME" : period === "TODAY" ? "TODAY" : "7 DAYS"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Orders List Table */}
-                {isOrdersLoading && orders.length === 0 ? (
-                  <div className="p-12 text-center font-mono text-xs text-[#B68A2D] animate-pulse">
-                    FETCHING AUDIT RECORDS...
-                  </div>
-                ) : filteredOrders.length === 0 ? (
-                  <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/20 bg-[#1C1A15]/60 p-12 text-center font-mono text-xs text-[#F3EFE6]/60">
-                    No orders match the selected filter criteria.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-[#B68A2D]/30 bg-[#1C1A15] shadow-xl">
-                    <table className="w-full text-left text-xs text-[#F3EFE6]/90 font-mono">
-                      <thead className="bg-[#211F1A] border-b border-[#B68A2D]/25 text-[10px] font-bold uppercase text-[#B68A2D] tracking-wider">
-                        <tr>
-                          <th className="px-5 py-3.5">Ticket ID</th>
-                          <th className="px-5 py-3.5">Timestamp</th>
-                          <th className="px-5 py-3.5">Table</th>
-                          <th className="px-5 py-3.5">Items Summary</th>
-                          <th className="px-5 py-3.5">Server Total</th>
-                          <th className="px-5 py-3.5">Status</th>
-                          <th className="px-5 py-3.5 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#B68A2D]/15">
-                        {filteredOrders.map((order) => {
-                          const time = new Date(order.createdAt).toLocaleString([], {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          });
-
-                          return (
-                            <tr key={order.id} className="hover:bg-[#211F1A]/60 transition-colors">
-                              <td className="px-5 py-4 font-bold text-[#E5C378]">
-                                #{order.id.slice(0, 8)}
-                              </td>
-                              <td className="px-5 py-4 text-[#F3EFE6]/50">{time}</td>
-                              <td className="px-5 py-4">
-                                <span className="text-[#F3EFE6] font-semibold">
-                                  {order.table?.name ? `Table ${order.table.name}` : "VIP Suite 01"}
-                                </span>
-                              </td>
-                              <td className="px-5 py-4 text-[#F3EFE6]/80 max-w-xs truncate">
-                                {order.items.map((i) => `${i.quantity}x ${i.menuItem?.name || "Item"}`).join(", ")}
-                              </td>
-                              <td className="px-5 py-4 font-bold text-[#E5C378] text-sm">
-                                ${Number(order.total).toFixed(2)}
-                              </td>
-                              <td className="px-5 py-4">
-                                <span
-                                  className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-                                    order.status === "COMPLETED"
-                                      ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40"
-                                      : order.status === "READY"
-                                      ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40"
-                                      : order.status === "PREPARING"
-                                      ? "bg-[#22D3EE]/20 text-[#22D3EE] border-[#22D3EE]/40"
-                                      : order.status === "CANCELLED"
-                                      ? "bg-red-950/40 text-red-300 border-red-500/40"
-                                      : "bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/40"
-                                  }`}
-                                >
-                                  {order.status}
-                                </span>
-                              </td>
-                              <td className="px-5 py-4 text-right space-x-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setInspectedOrder(order)}
-                                  className="text-xs bg-[#211F1A] hover:bg-[#28251E] text-[#E5C378] border border-[#B68A2D]/30 px-3 py-1 rounded transition-colors font-bold cursor-pointer"
-                                >
-                                  INSPECT
-                                </button>
-                                {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAdminCancelOrder(order.id)}
-                                    className="text-xs text-red-400 hover:text-red-300 px-2 py-1 transition-colors cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {/* TAB 2: MENU & PRICING MANAGEMENT */}
-            {activeTab === "MENU" ? (
-              <div className="space-y-6">
-                {menuError && (
-                  <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 font-mono text-xs">
-                    {menuError}
-                  </div>
-                )}
-
-                {isMenuLoading && menus.length === 0 ? (
-                  <div className="p-12 text-center font-mono text-xs text-[#B68A2D] animate-pulse">
-                    LOADING RESTAURANT MENUS...
-                  </div>
-                ) : menus.length === 0 ? (
-                  <div className="corner-bracket-container rounded-2xl border border-[#B68A2D]/20 bg-[#1C1A15]/60 p-12 text-center font-mono text-xs text-[#F3EFE6]/60">
-                    No active menus registered for this restaurant.
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    {menus.map((menu) => (
-                      <div
-                        key={menu.id}
-                        className="corner-bracket-container rounded-2xl border border-[#B68A2D]/30 bg-[#1C1A15] p-5 sm:p-6 shadow-xl space-y-4"
-                      >
-                        <div className="corner-bracket-tl !w-3 !h-3" />
-                        <div className="corner-bracket-tr !w-3 !h-3" />
-                        <div className="corner-bracket-bl !w-3 !h-3" />
-                        <div className="corner-bracket-br !w-3 !h-3" />
-
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#B68A2D]/20">
-                          <div>
-                            <div className="flex items-center gap-3">
-                              <h3 className="font-mono text-lg font-bold text-[#F3EFE6] uppercase">
-                                {menu.name}
-                              </h3>
-                              <span
-                                className={`font-mono text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                                  menu.active
-                                    ? "bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/40"
-                                    : "bg-[#211F1A] text-[#F3EFE6]/50"
-                                }`}
-                              >
-                                {menu.active ? "ACTIVE" : "INACTIVE"}
-                              </span>
-                            </div>
-                            {menu.description && (
-                              <p className="font-mono text-xs text-[#B68A2D]/80 mt-0.5">{menu.description}</p>
-                            )}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAddItem(menu.id)}
-                            className="font-mono text-xs font-bold bg-[#B68A2D] hover:bg-[#C89B37] text-[#191814] px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer uppercase tracking-wider"
-                          >
-                            <Plus className="w-4 h-4" />
-                            <span>Add Menu Item</span>
-                          </button>
-                        </div>
-
-                        {/* Menu Items Table */}
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs font-mono text-[#F3EFE6]/90">
-                            <thead className="text-[10px] font-bold uppercase text-[#B68A2D] border-b border-[#B68A2D]/20">
-                              <tr>
-                                <th className="pb-3">Item Name</th>
-                                <th className="pb-3">Category</th>
-                                <th className="pb-3">Price</th>
-                                <th className="pb-3">Status</th>
-                                <th className="pb-3 text-right">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#B68A2D]/15">
-                              {menu.items.map((item) => (
-                                <tr key={item.id} className="hover:bg-[#211F1A]/60 transition-colors">
-                                  <td className="py-3.5">
-                                    <p className="font-bold text-sm text-[#F3EFE6]">{item.name}</p>
-                                    {item.description && (
-                                      <p className="text-xs text-[#F3EFE6]/60 truncate max-w-md mt-0.5">
-                                        {item.description}
-                                      </p>
-                                    )}
-                                  </td>
-                                  <td className="py-3.5">
-                                    <span className="bg-[#211F1A] text-[#E5C378] border border-[#B68A2D]/25 px-2 py-0.5 rounded font-medium">
-                                      {item.category || "General"}
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 font-bold text-[#E5C378] text-sm">
-                                    ${Number(item.price).toFixed(2)}
-                                  </td>
-                                  <td className="py-3.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleItemActive(menu.id, item)}
-                                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
-                                        item.active
-                                          ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40"
-                                          : "bg-[#211F1A] text-[#F3EFE6]/40 border-[#B68A2D]/20"
-                                      }`}
-                                    >
-                                      {item.active ? "ACTIVE" : "DISABLED"}
-                                    </button>
-                                  </td>
-                                  <td className="py-3.5 text-right space-x-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEditItem(menu.id, item)}
-                                      className="text-xs text-[#22D3EE] hover:underline font-bold cursor-pointer"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => item.id && handleDeleteItem(menu.id, item.id)}
-                                      className="text-xs text-red-400 hover:underline font-bold cursor-pointer"
-                                    >
-                                      Delete
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                  <div className="space-y-1">
+                    {ord.items.map((it) => (
+                      <div key={it.id} className="flex justify-between text-neutral-300">
+                        <span>
+                          {it.quantity}x {it.menuItem?.name || "Dish"}
+                        </span>
+                        <span className="text-neutral-400">${Number(it.subtotal).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            ) : null}
+
+                  <div className="border-t border-[#B68A2D]/20 pt-2 flex justify-between items-center font-bold">
+                    <span className="text-neutral-400">Total:</span>
+                    <span className="text-[#E5C378] text-sm">${Number(ord.total).toFixed(2)}</span>
+                  </div>
+
+                  {/* Payment & Split Records */}
+                  {ord.payments && ord.payments.length > 0 && (
+                    <div className="bg-neutral-900/80 p-2 rounded-lg text-[10px] text-neutral-400 space-y-1">
+                      <span className="font-bold text-neutral-300 block">Payment Records:</span>
+                      {ord.payments.map((p) => (
+                        <div key={p.id} className="flex justify-between items-center">
+                          <span>
+                            {p.status} {p.isSplit ? `(Share ${p.splitIndex}/${p.splitTotal})` : ""}
+                          </span>
+                          <span className="text-white">${Number(p.amount).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => handleRefund(ord.id, Number(ord.total))}
+                      className="flex-1 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] font-bold"
+                    >
+                      Issue Refund
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Inspect Order Modal */}
-      {inspectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono select-none">
-          <div className="corner-bracket-container w-full max-w-lg rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/40 p-6 shadow-2xl text-[#F3EFE6] space-y-4">
-            <div className="corner-bracket-tl !w-3.5 !h-3.5" />
-            <div className="corner-bracket-tr !w-3.5 !h-3.5" />
-            <div className="corner-bracket-bl !w-3.5 !h-3.5" />
-            <div className="corner-bracket-br !w-3.5 !h-3.5" />
-
-            <div className="flex items-center justify-between pb-3 border-b border-[#B68A2D]/25">
+        {/* ========================================================= */}
+        {/* TAB 2: MENU CATEGORIES MANAGEMENT                        */}
+        {/* ========================================================= */}
+        {activeTab === "CATEGORIES" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-base font-bold text-[#E5C378] flex items-center gap-2">
-                  <span>ORDER #{inspectedOrder.id.slice(0, 8)}</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#B68A2D]/20 text-[#B68A2D] border border-[#B68A2D]/40">
-                    {inspectedOrder.status}
-                  </span>
-                </h3>
-                <p className="text-[10px] text-[#F3EFE6]/50 mt-0.5">{inspectedOrder.id}</p>
+                <h2 className="text-sm font-mono font-bold text-neutral-300 uppercase">
+                  Menu Categories ({categories.length})
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Organize dishes, beverages, ice cream flavours, and combos.
+                </p>
               </div>
               <button
-                type="button"
-                onClick={() => setInspectedOrder(null)}
-                className="text-[#B68A2D]/70 hover:text-white p-1"
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="px-3.5 py-1.5 bg-[#E5C378] text-[#191814] font-bold rounded-xl text-xs font-mono flex items-center gap-1.5 shadow"
               >
-                <X className="w-5 h-5" />
+                <Plus className="w-3.5 h-3.5" />
+                <span>NEW CATEGORY</span>
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-[#211F1A] p-3 rounded-xl border border-[#B68A2D]/20">
-                <div>
-                  <span className="text-[#B68A2D] block text-[10px] uppercase">Placed At</span>
-                  <span className="font-semibold text-[#F3EFE6]">
-                    {new Date(inspectedOrder.createdAt).toLocaleString()}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[#B68A2D] block text-[10px] uppercase">Table Allocation</span>
-                  <span className="font-semibold text-[#F3EFE6]">
-                    {inspectedOrder.table?.name ? `Table ${inspectedOrder.table.name}` : "VIP Suite 01"}
-                  </span>
-                </div>
-              </div>
-
-              {inspectedOrder.specialInstructions && (
-                <div className="p-3 rounded-xl bg-[#211F1A] border border-[#B68A2D]/20">
-                  <span className="font-bold text-[#E5C378] text-[10px] uppercase block mb-1">
-                    Special Instructions / Notes:
-                  </span>
-                  <p className="text-[#F3EFE6]/90">{inspectedOrder.specialInstructions}</p>
-                </div>
-              )}
-
-              {/* Items Detail */}
-              <div className="space-y-2 pt-2">
-                <span className="text-[10px] font-bold text-[#B68A2D] uppercase tracking-wide">
-                  Order Line Items:
-                </span>
-                <div className="divide-y divide-[#B68A2D]/15 max-h-56 overflow-y-auto pr-1">
-                  {inspectedOrder.items.map((item) => (
-                    <div key={item.id} className="py-2 flex items-start justify-between">
-                      <div>
-                        <span className="font-bold text-[#F3EFE6]">
-                          {item.quantity}x {item.menuItem?.name || "Item"}
-                        </span>
-                        {item.notes && (
-                          <span className="text-[#B68A2D] block text-[10px] mt-0.5">Note: {item.notes}</span>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[#F3EFE6]/50 text-[10px]">(${Number(item.unitPrice).toFixed(2)} ea)</span>{" "}
-                        <span className="font-bold text-[#E5C378] ml-2">
-                          ${Number(item.subtotal).toFixed(2)}
-                        </span>
-                      </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {categories.map((cat) => (
+                <div
+                  key={cat.id}
+                  className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 font-mono text-xs space-y-2 shadow-lg flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-bold text-white text-sm">{cat.name}</h3>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                          cat.active
+                            ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                            : "bg-neutral-800 text-neutral-400"
+                        }`}
+                      >
+                        {cat.active ? "ACTIVE" : "INACTIVE"}
+                      </span>
                     </div>
-                  ))}
+                    <p className="text-neutral-400 text-[11px] mt-1 line-clamp-2">
+                      {cat.description || "No description provided."}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#B68A2D]/20 flex justify-between items-center text-neutral-400 text-[11px]">
+                    <span>Sort Index: {cat.sortOrder}</span>
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Delete category "${cat.name}"?`)) {
+                          await deleteCategory(authToken!, cat.id);
+                          refreshCurrentData();
+                        }
+                      }}
+                      className="text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#B68A2D]/25 flex items-center justify-between">
-                <span className="font-bold text-[#F3EFE6]/80 uppercase">Server-Calculated Total</span>
-                <span className="text-xl font-extrabold text-[#E5C378]">
-                  ${Number(inspectedOrder.total).toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setInspectedOrder(null)}
-                className="px-4 py-2 text-xs bg-[#211F1A] hover:bg-[#28251E] text-[#E5C378] border border-[#B68A2D]/40 rounded-xl font-bold cursor-pointer"
-              >
-                CLOSE
-              </button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Create / Edit Menu Item Modal */}
-      {isItemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono select-none">
-          <div className="corner-bracket-container w-full max-w-md rounded-2xl bg-[#1C1A15] border border-[#B68A2D]/40 p-6 shadow-2xl text-[#F3EFE6] space-y-4">
-            <div className="corner-bracket-tl !w-3.5 !h-3.5" />
-            <div className="corner-bracket-tr !w-3.5 !h-3.5" />
-            <div className="corner-bracket-bl !w-3.5 !h-3.5" />
-            <div className="corner-bracket-br !w-3.5 !h-3.5" />
-
-            <div className="flex items-center justify-between pb-3 border-b border-[#B68A2D]/25">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-[#E5C378]">
-                {editingItem?.item ? "Edit Menu Item" : "Add Menu Item"}
-              </h3>
+        {/* ========================================================= */}
+        {/* TAB 3: MENU ITEMS MANAGEMENT                             */}
+        {/* ========================================================= */}
+        {activeTab === "MENU" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-sm font-mono font-bold text-neutral-300 uppercase">
+                  Menu Items Codex
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Manage products, prices, preparation timing, dietary tags, and modifiers.
+                </p>
+              </div>
               <button
-                type="button"
-                onClick={() => setIsItemModalOpen(false)}
-                className="text-[#B68A2D]/70 hover:text-white p-1"
+                onClick={() => {
+                  const firstMenu = menus[0];
+                  if (!firstMenu) return;
+                  setEditingItem({ menuId: firstMenu.id });
+                  setItemFormName("");
+                  setItemFormPrice("");
+                  setItemFormDescription("");
+                  setItemFormPrepTime("15");
+                  setItemFormDietary("");
+                  setItemFormCategoryId(categories[0]?.id || "");
+                  setItemFormSelectedModGroups([]);
+                  setIsItemModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 bg-[#E5C378] text-[#191814] font-bold rounded-xl text-xs font-mono flex items-center gap-1.5 shadow"
               >
-                <X className="w-5 h-5" />
+                <Plus className="w-3.5 h-3.5" />
+                <span>NEW ITEM</span>
               </button>
             </div>
 
-            {itemSaveError && (
-              <div className="p-3 rounded-lg bg-red-950/60 border border-red-500/50 text-red-200 text-xs">
-                {itemSaveError}
+            <div className="space-y-6">
+              {menus.map((menu) => (
+                <div key={menu.id} className="space-y-3">
+                  <h3 className="font-mono text-xs font-bold text-[#E5C378] uppercase border-b border-[#B68A2D]/20 pb-1">
+                    {menu.name} ({menu.items.length} items)
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {menu.items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 font-mono text-xs flex flex-col justify-between space-y-3 shadow-lg"
+                      >
+                        <div>
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-bold text-white text-sm">{item.name}</h4>
+                            <span className="font-bold text-[#E5C378] text-sm">
+                              ${Number(item.price).toFixed(2)}
+                            </span>
+                          </div>
+                          <p className="text-neutral-400 text-[11px] mt-1 line-clamp-2">
+                            {item.description}
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {item.preparationTime && (
+                              <span className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">
+                                {item.preparationTime} min
+                              </span>
+                            )}
+                            {item.dietaryTags?.map((t) => (
+                              <span
+                                key={t}
+                                className="text-[10px] bg-emerald-950/60 text-emerald-400 px-1.5 py-0.5 rounded"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-[#B68A2D]/20 flex justify-between items-center text-[11px]">
+                          <span className="text-neutral-500">
+                            {item.active ? "Available" : "Disabled"}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingItem({ menuId: menu.id, item });
+                                setItemFormName(item.name);
+                                setItemFormPrice(item.price.toString());
+                                setItemFormDescription(item.description || "");
+                                setItemFormPrepTime(item.preparationTime?.toString() || "");
+                                setItemFormDietary(item.dietaryTags?.join(", ") || "");
+                                setItemFormCategoryId(item.categoryId || "");
+                                setIsItemModalOpen(true);
+                              }}
+                              className="text-amber-400 hover:text-amber-300"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Delete "${item.name}"?`)) {
+                                  await deleteMenuItem(menu.id, item.id!, authToken!);
+                                  refreshCurrentData();
+                                }
+                              }}
+                              className="text-rose-400 hover:text-rose-300"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 4: MODIFIERS & CUSTOMIZATION                         */}
+        {/* ========================================================= */}
+        {activeTab === "MODIFIERS" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-sm font-mono font-bold text-neutral-300 uppercase">
+                  Modifier Groups ({modifierGroups.length})
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Steak temperatures, gelato scoops, milk options, add-on toppings.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsModModalOpen(true)}
+                className="px-3.5 py-1.5 bg-[#E5C378] text-[#191814] font-bold rounded-xl text-xs font-mono flex items-center gap-1.5 shadow"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>NEW MODIFIER GROUP</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {modifierGroups.map((grp) => (
+                <div
+                  key={grp.id}
+                  className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 font-mono text-xs space-y-3 shadow-lg"
+                >
+                  <div className="flex justify-between items-start border-b border-[#B68A2D]/20 pb-2">
+                    <h3 className="font-bold text-white text-sm">{grp.name}</h3>
+                    <span className="text-[10px] text-amber-400 font-bold">
+                      {grp.required ? "Required" : "Optional"} (Max {grp.maxSelections})
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {grp.options.map((opt) => (
+                      <div key={opt.id} className="flex justify-between text-neutral-300 text-[11px]">
+                        <span>• {opt.name}</span>
+                        <span className="text-amber-400">
+                          {Number(opt.priceAdjustment) > 0
+                            ? `+$${Number(opt.priceAdjustment).toFixed(2)}`
+                            : "Free"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 5: LOCATIONS & QR CODE SYSTEM                        */}
+        {/* ========================================================= */}
+        {activeTab === "LOCATIONS" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-sm font-mono font-bold text-neutral-300 uppercase">
+                  Ordering Locations & QR Codes ({locations.length})
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Generate printable QR codes for tables, hotel rooms, kiosks, or pickup points.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsLocationModalOpen(true)}
+                className="px-3.5 py-1.5 bg-[#E5C378] text-[#191814] font-bold rounded-xl text-xs font-mono flex items-center gap-1.5 shadow"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>NEW LOCATION</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {locations.map((loc) => (
+                <div
+                  key={loc.id}
+                  className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 font-mono text-xs space-y-3 shadow-lg flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-bold text-white text-sm">{loc.name}</h3>
+                        <span className="text-[10px] text-neutral-400 uppercase">
+                          CODE: {loc.code}
+                        </span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-amber-400 font-bold border border-neutral-700">
+                        {loc.type}
+                      </span>
+                    </div>
+                    <p className="text-neutral-400 text-[11px] mt-2">
+                      Fulfillment: {loc.fulfillmentMethod.replace(/_/g, " ")}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#B68A2D]/20 flex justify-between items-center">
+                    <button
+                      onClick={() => handleViewLocationQr(loc)}
+                      className="px-3 py-1 bg-[#E5C378]/20 hover:bg-[#E5C378]/30 border border-[#B68A2D]/40 text-[#E5C378] rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>View & Print QR</span>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Delete location "${loc.name}"?`)) {
+                          await deleteLocation(authToken!, loc.id);
+                          refreshCurrentData();
+                        }
+                      }}
+                      className="text-rose-400 hover:text-rose-300"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 6: REAL DATABASE ANALYTICS & AI INSIGHTS             */}
+        {/* ========================================================= */}
+        {activeTab === "ANALYTICS" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <h2 className="text-sm font-mono font-bold text-neutral-300 uppercase">
+                  Business Performance & AI Insights
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Calculated from actual database orders, tax, and payments.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={analyticsPeriod}
+                  onChange={(e) => setAnalyticsPeriod(e.target.value)}
+                  className="bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono"
+                >
+                  <option value="today">Today</option>
+                  <option value="this_week">This Week</option>
+                  <option value="this_month">This Month</option>
+                  <option value="this_year">This Year</option>
+                </select>
+
+                <a
+                  href={authToken ? getExportAnalyticsCsvUrl(authToken, analyticsPeriod) : "#"}
+                  download
+                  className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-[#E5C378] border border-[#B68A2D]/40 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>EXPORT CSV</span>
+                </a>
+              </div>
+            </div>
+
+            {/* KPI Cards Grid */}
+            {analyticsOverview && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono">
+                <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 shadow-lg">
+                  <span className="text-[10px] text-neutral-400 uppercase">Gross Revenue</span>
+                  <div className="text-xl sm:text-2xl font-bold text-[#E5C378] mt-1">
+                    ${Number(analyticsOverview.grossRevenue || 0).toFixed(2)}
+                  </div>
+                  <span className="text-[10px] text-neutral-500">
+                    Net: ${Number(analyticsOverview.netRevenue || 0).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 shadow-lg">
+                  <span className="text-[10px] text-neutral-400 uppercase">Total Orders</span>
+                  <div className="text-xl sm:text-2xl font-bold text-white mt-1">
+                    {analyticsOverview.totalOrders ?? 0}
+                  </div>
+                  <span className="text-[10px] text-emerald-400">
+                    {analyticsOverview.completedOrders ?? 0} completed
+                  </span>
+                </div>
+
+                <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 shadow-lg">
+                  <span className="text-[10px] text-neutral-400 uppercase">Average Order Value</span>
+                  <div className="text-xl sm:text-2xl font-bold text-white mt-1">
+                    ${Number(analyticsOverview.averageOrderValue || 0).toFixed(2)}
+                  </div>
+                  <span className="text-[10px] text-neutral-500">
+                    Tax: ${Number(analyticsOverview.taxCollected || 0).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 shadow-lg">
+                  <span className="text-[10px] text-neutral-400 uppercase">Refunds / Cancellations</span>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-400 mt-1">
+                    ${Number(analyticsOverview.refundsTotal || 0).toFixed(2)}
+                  </div>
+                  <span className="text-[10px] text-neutral-500">
+                    {analyticsOverview.cancelledOrders ?? 0} cancelled
+                  </span>
+                </div>
               </div>
             )}
 
-            <div className="space-y-3 text-xs">
+            {/* AI Business Insights Panel (Phase 6 Requirement 23) */}
+            <div className="bg-gradient-to-br from-amber-950/30 to-neutral-900 border border-[#B68A2D]/40 rounded-2xl p-5 space-y-3 font-mono">
+              <div className="flex items-center gap-2 text-[#E5C378]">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm uppercase tracking-wider">
+                  AI Hospitality Intelligence & Recommendations
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {(aiInsights || []).map((ins, i) => (
+                  <div
+                    key={i}
+                    className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-xl space-y-1"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-white">{ins.title}</span>
+                      <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                        {ins.type}
+                      </span>
+                    </div>
+                    <p className="text-neutral-400 text-[11px] leading-relaxed">{ins.insight}</p>
+                    {ins.metric && (
+                      <span className="text-[10px] text-emerald-400 font-semibold block pt-1">
+                        Metric: {ins.metric}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {(!aiInsights || aiInsights.length === 0) && (
+                  <div className="col-span-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-xl text-neutral-500 text-[11px]">
+                    No insights generated for this period yet.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Top Items & Categories Breakdown */}
+            {analyticsCharts && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+                <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 space-y-2">
+                  <h4 className="font-bold text-[#E5C378] uppercase">Top-Selling Menu Items</h4>
+                  <div className="space-y-1.5">
+                    {(analyticsCharts.topItems || []).map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-neutral-300">
+                        <span>
+                          {idx + 1}. {item.name} ({item.quantity} sold)
+                        </span>
+                        <span className="font-bold text-white">${Number(item.revenue || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                    {(!analyticsCharts.topItems || analyticsCharts.topItems.length === 0) && (
+                      <p className="text-neutral-500 text-[11px]">No orders recorded yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-4 space-y-2">
+                  <h4 className="font-bold text-[#E5C378] uppercase">Ordering Channels</h4>
+                  <div className="space-y-1.5">
+                    {(analyticsCharts.orderChannels || analyticsCharts.channels || []).map((ch, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-neutral-300">
+                        <span className="uppercase">{ch.channel}</span>
+                        <span className="font-bold text-white">{ch.count ?? ch.orders ?? 0} orders</span>
+                      </div>
+                    ))}
+                    {(!analyticsCharts.orderChannels || analyticsCharts.orderChannels.length === 0) && (
+                      <p className="text-neutral-500 text-[11px]">No channels recorded yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 7: BUSINESS SETTINGS                                 */}
+        {/* ========================================================= */}
+        {activeTab === "SETTINGS" && (
+          <div className="bg-[#1C1A15] border border-[#B68A2D]/30 rounded-2xl p-6 font-mono text-xs space-y-6 max-w-2xl shadow-xl">
+            <div className="border-b border-[#B68A2D]/20 pb-3">
+              <h2 className="text-base font-bold text-white uppercase">
+                Venue Profile & Multi-Tenant Settings
+              </h2>
+              <p className="text-neutral-400 text-xs mt-0.5">
+                Configure business identity, ordering toggles, currency, and tax parameters.
+              </p>
+            </div>
+
+            <div className="space-y-4">
               <div>
-                <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
-                  Item Name
-                </label>
+                <label className="block text-neutral-300 font-bold mb-1">Business Name</label>
                 <input
                   type="text"
-                  value={itemFormName}
-                  onChange={(e) => setItemFormName(e.target.value)}
-                  placeholder="e.g. Wagyu Ribeye"
-                  className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none focus:border-[#B68A2D]"
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2.5 text-white"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-neutral-300 font-bold mb-1">Business Type</label>
+                <select
+                  value={businessType}
+                  onChange={(e) => setBusinessType(e.target.value as BusinessType)}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2.5 text-white"
+                >
+                  {BUSINESS_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
-                    Category
-                  </label>
+                  <label className="block text-neutral-300 font-bold mb-1">Currency</label>
                   <select
-                    value={itemFormCategory}
-                    onChange={(e) => setItemFormCategory(e.target.value)}
-                    className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] focus:outline-none focus:border-[#B68A2D]"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2.5 text-white"
                   >
-                    <option value="Starters">Starters</option>
-                    <option value="Mains">Mains</option>
-                    <option value="Sides">Sides</option>
-                    <option value="Desserts">Desserts</option>
-                    <option value="Drinks">Drinks</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="AUD">AUD ($)</option>
+                    <option value="NZD">NZD ($)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
-                    Price ($)
-                  </label>
+                  <label className="block text-neutral-300 font-bold mb-1">Tax Rate (%)</label>
                   <input
                     type="number"
-                    step="0.50"
-                    value={itemFormPrice}
-                    onChange={(e) => setItemFormPrice(e.target.value)}
-                    placeholder="48.00"
-                    className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none focus:border-[#B68A2D]"
+                    value={taxRatePercent}
+                    onChange={(e) => setTaxRatePercent(e.target.value)}
+                    step="0.1"
+                    min="0"
+                    max="50"
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2.5 text-white"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-[#B68A2D] uppercase tracking-wider mb-1">
-                  Description
+                <label className="block text-neutral-300 font-bold mb-1">Timezone</label>
+                <input
+                  type="text"
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2.5 text-white"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <input
+                  type="checkbox"
+                  id="orderingToggle"
+                  checked={orderingEnabled}
+                  onChange={(e) => setOrderingEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-amber-500 rounded"
+                />
+                <label htmlFor="orderingToggle" className="text-white font-bold cursor-pointer">
+                  Public Guest Ordering Active
                 </label>
+              </div>
+
+              {settingsSuccess && (
+                <div className="p-3 bg-emerald-950/50 border border-emerald-500/50 rounded-xl text-emerald-300 flex items-center gap-2">
+                  <Check className="w-4 h-4" />
+                  <span>Business settings saved successfully.</span>
+                </div>
+              )}
+
+              <button
+                onClick={handleSaveSettings}
+                disabled={isSavingSettings}
+                className="w-full py-3 bg-[#E5C378] hover:bg-amber-400 text-neutral-950 font-bold rounded-xl text-sm transition"
+              >
+                {isSavingSettings ? "Saving Settings..." : "Save Business Settings"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Item Modal */}
+      {isItemModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1C1A15] border border-[#B68A2D]/40 w-full max-w-md rounded-2xl p-6 font-mono text-xs space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-[#B68A2D]/20 pb-2">
+              <h3 className="font-bold text-white text-sm">
+                {editingItem?.item ? "Edit Menu Item" : "Create Menu Item"}
+              </h3>
+              <button
+                onClick={() => setIsItemModalOpen(false)}
+                className="text-neutral-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-neutral-300 block mb-1">Item Name</label>
+                <input
+                  type="text"
+                  value={itemFormName}
+                  onChange={(e) => setItemFormName(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-neutral-300 block mb-1">Category</label>
+                <select
+                  value={itemFormCategoryId}
+                  onChange={(e) => setItemFormCategoryId(e.target.value)}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                >
+                  <option value="">No Category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-neutral-300 block mb-1">Price ($)</label>
+                  <input
+                    type="number"
+                    value={itemFormPrice}
+                    onChange={(e) => setItemFormPrice(e.target.value)}
+                    step="0.01"
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-neutral-300 block mb-1">Prep Time (min)</label>
+                  <input
+                    type="number"
+                    value={itemFormPrepTime}
+                    onChange={(e) => setItemFormPrepTime(e.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-neutral-300 block mb-1">Description</label>
                 <textarea
                   value={itemFormDescription}
                   onChange={(e) => setItemFormDescription(e.target.value)}
                   rows={2}
-                  placeholder="e.g. 250g grilled Wagyu ribeye with truffle herb butter..."
-                  className="w-full rounded-xl bg-[#191814] border border-[#B68A2D]/30 p-2.5 text-[#F3EFE6] placeholder-[#F3EFE6]/30 focus:outline-none focus:border-[#B68A2D]"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
                 />
               </div>
+
+              <div>
+                <label className="text-neutral-300 block mb-1">
+                  Dietary Tags (comma separated)
+                </label>
+                <input
+                  type="text"
+                  value={itemFormDietary}
+                  onChange={(e) => setItemFormDietary(e.target.value)}
+                  placeholder="gluten-free, vegetarian, vegan"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                />
+              </div>
+
+              {modifierGroups.length > 0 && (
+                <div>
+                  <label className="text-neutral-300 block mb-1">Assign Modifier Groups</label>
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {modifierGroups.map((g) => {
+                      const isChecked = itemFormSelectedModGroups.includes(g.id);
+                      return (
+                        <label
+                          key={g.id}
+                          className="flex items-center gap-2 p-1.5 bg-neutral-900 rounded-lg cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setItemFormSelectedModGroups((prev) => [...prev, g.id]);
+                              } else {
+                                setItemFormSelectedModGroups((prev) =>
+                                  prev.filter((id) => id !== g.id)
+                                );
+                              }
+                            }}
+                          />
+                          <span>{g.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex gap-2 pt-2 border-t border-[#B68A2D]/20">
               <button
-                type="button"
                 onClick={() => setIsItemModalOpen(false)}
-                className="px-4 py-2 text-xs text-[#F3EFE6]/70 hover:text-white rounded-lg"
+                className="flex-1 py-2 bg-neutral-800 rounded-xl text-neutral-300"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={handleSaveItem}
-                disabled={isSavingItem}
-                className="px-5 py-2 text-xs font-bold bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#191814] rounded-xl shadow-[0_0_15px_rgba(182,138,45,0.4)] disabled:opacity-50 uppercase tracking-wider cursor-pointer"
+                onClick={handleSaveMenuItem}
+                className="flex-1 py-2 bg-[#E5C378] text-neutral-950 font-bold rounded-xl"
               >
-                {isSavingItem ? "Saving..." : "Save Item"}
+                Save Item
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Staff Login Modal */}
+      {/* Category Modal */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1C1A15] border border-[#B68A2D]/40 w-full max-w-sm rounded-2xl p-6 font-mono text-xs space-y-4 shadow-2xl">
+            <h3 className="font-bold text-white text-sm">Create Menu Category</h3>
+            <div>
+              <label className="text-neutral-300 block mb-1">Category Name</label>
+              <input
+                type="text"
+                value={categoryFormName}
+                onChange={(e) => setCategoryFormName(e.target.value)}
+                placeholder="e.g. Starters, Gelato, Beverages"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-neutral-300 block mb-1">Description (optional)</label>
+              <input
+                type="text"
+                value={categoryFormDescription}
+                onChange={(e) => setCategoryFormDescription(e.target.value)}
+                placeholder="e.g. Traditional house gelato and cones"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setIsCategoryModalOpen(false)}
+                className="flex-1 py-2 bg-neutral-800 rounded-xl text-neutral-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveCategory}
+                className="flex-1 py-2 bg-[#E5C378] text-neutral-950 font-bold rounded-xl"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modifier Group Modal */}
+      {isModModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1C1A15] border border-[#B68A2D]/40 w-full max-w-md rounded-2xl p-6 font-mono text-xs space-y-4 shadow-2xl">
+            <h3 className="font-bold text-white text-sm">Create Modifier Group</h3>
+            <div>
+              <label className="text-neutral-300 block mb-1">Group Name</label>
+              <input
+                type="text"
+                value={modFormName}
+                onChange={(e) => setModFormName(e.target.value)}
+                placeholder="e.g. Cup or Cone, Milk Type, Doneness"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+              />
+            </div>
+
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={modFormRequired}
+                  onChange={(e) => setModFormRequired(e.target.checked)}
+                />
+                <span>Required</span>
+              </label>
+              <div>
+                <span>Max picks: </span>
+                <input
+                  type="number"
+                  value={modFormMax}
+                  onChange={(e) => setModFormMax(parseInt(e.target.value) || 1)}
+                  className="w-14 bg-neutral-900 border border-neutral-700 rounded p-1 text-center text-white"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t border-[#B68A2D]/20 pt-2">
+              <span className="font-bold text-neutral-300 block">Options</span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={modFormOptionName1}
+                  onChange={(e) => setModFormOptionName1(e.target.value)}
+                  placeholder="Option 1 (e.g. Waffle Cone)"
+                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                />
+                <input
+                  type="number"
+                  value={modFormOptionPrice1}
+                  onChange={(e) => setModFormOptionPrice1(e.target.value)}
+                  placeholder="Price (+$)"
+                  className="w-24 bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={modFormOptionName2}
+                  onChange={(e) => setModFormOptionName2(e.target.value)}
+                  placeholder="Option 2 (e.g. Cup)"
+                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                />
+                <input
+                  type="number"
+                  value={modFormOptionPrice2}
+                  onChange={(e) => setModFormOptionPrice2(e.target.value)}
+                  placeholder="Price (+$)"
+                  className="w-24 bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-[#B68A2D]/20">
+              <button
+                onClick={() => setIsModModalOpen(false)}
+                className="flex-1 py-2 bg-neutral-800 rounded-xl text-neutral-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveModifierGroup}
+                className="flex-1 py-2 bg-[#E5C378] text-neutral-950 font-bold rounded-xl"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location Modal */}
+      {isLocationModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1C1A15] border border-[#B68A2D]/40 w-full max-w-sm rounded-2xl p-6 font-mono text-xs space-y-4 shadow-2xl">
+            <h3 className="font-bold text-white text-sm">Add Ordering Location</h3>
+            <div>
+              <label className="text-neutral-300 block mb-1">Location Name</label>
+              <input
+                type="text"
+                value={locFormName}
+                onChange={(e) => setLocFormName(e.target.value)}
+                placeholder="e.g. Patio Table 4, Room 204, Kiosk 01"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-neutral-300 block mb-1">Unique Code</label>
+              <input
+                type="text"
+                value={locFormCode}
+                onChange={(e) => setLocFormCode(e.target.value.toUpperCase())}
+                placeholder="e.g. TABLE-04, ROOM-204"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white uppercase"
+              />
+            </div>
+            <div>
+              <label className="text-neutral-300 block mb-1">Location Type</label>
+              <select
+                value={locFormType}
+                onChange={(e) => setLocFormType(e.target.value as LocationType)}
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+              >
+                <option value="TABLE">Table</option>
+                <option value="ROOM">Hotel Room</option>
+                <option value="CABIN">Cabin</option>
+                <option value="KIOSK">Kiosk</option>
+                <option value="PICKUP_COUNTER">Pickup Counter</option>
+                <option value="FOOD_TRUCK_WINDOW">Food Truck Window</option>
+                <option value="BEACH_POINT">Beach Point</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-neutral-300 block mb-1">Fulfillment Method</label>
+              <select
+                value={locFormFulfillment}
+                onChange={(e) => setLocFormFulfillment(e.target.value)}
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-2 text-white"
+              >
+                <option value="TABLE_SERVICE">Table Service</option>
+                <option value="ROOM_SERVICE">Room Service</option>
+                <option value="COUNTER_PICKUP">Counter Pickup</option>
+                <option value="CURBSIDE">Curbside</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setIsLocationModalOpen(false)}
+                className="flex-1 py-2 bg-neutral-800 rounded-xl text-neutral-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveLocation}
+                className="flex-1 py-2 bg-[#E5C378] text-neutral-950 font-bold rounded-xl"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR Code Inspection Modal */}
+      {qrModalData && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1C1A15] border border-[#B68A2D]/40 w-full max-w-sm rounded-3xl p-6 font-mono text-xs space-y-4 shadow-2xl text-center">
+            <h3 className="font-bold text-white text-base">{qrModalData.locName}</h3>
+            <p className="text-neutral-400 text-[11px]">Scan with phone camera to order directly</p>
+
+            <div className="p-4 bg-white rounded-2xl inline-block mx-auto shadow-xl">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={qrModalData.qrDataUrl}
+                alt="QR Code"
+                className="w-56 h-56 mx-auto"
+              />
+            </div>
+
+            <p className="text-[10px] text-neutral-400 break-all select-all">
+              {qrModalData.targetUrl}
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setQrModalData(null)}
+                className="flex-1 py-2.5 bg-neutral-800 rounded-xl text-neutral-300 font-bold"
+              >
+                Close
+              </button>
+              <a
+                href={qrModalData.qrDataUrl}
+                download={`${qrModalData.locName.replace(/\s+/g, "_")}_QR.png`}
+                className="flex-1 py-2.5 bg-[#E5C378] text-neutral-950 font-bold rounded-xl flex items-center justify-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save PNG</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Login Modal */}
       <TacticalLoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onSuccess={handleLoginSuccess}
       />
 
-      {/* Bottom Telemetry Ticker */}
       <TacticalTicker />
     </main>
   );

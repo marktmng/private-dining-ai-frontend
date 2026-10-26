@@ -19,7 +19,9 @@ import {
   Minus,
   Trash2,
   Receipt,
+  Radio,
 } from "lucide-react";
+import TacticalOrderTracker from "./TacticalOrderTracker";
 
 interface Props {
   items?: MatchedOrderItem[];
@@ -65,6 +67,7 @@ export default function TacticalAssistantPanel({
   onClearOrder,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"order" | "assist" | "transcript">("order");
+  const [showTrackerModal, setShowTrackerModal] = useState(false);
   const hasItems = items.length > 0;
   const hasConfirmation = needsConfirmation.length > 0;
 
@@ -268,6 +271,15 @@ export default function TacticalAssistantPanel({
                   </span>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setShowTrackerModal(true)}
+                  className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#11100D] font-mono text-xs font-bold tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(182,138,45,0.4)] transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                >
+                  <Radio className="w-3.5 h-3.5 animate-pulse text-[#11100D]" />
+                  <span>LAUNCH ORDER TELEMETRY HUD</span>
+                </button>
+
                 {onResetOrder && (
                   <button
                     type="button"
@@ -277,6 +289,18 @@ export default function TacticalAssistantPanel({
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Start New Table Order</span>
                   </button>
+                )}
+
+                {/* HUD Order Tracker Modal */}
+                {showTrackerModal && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+                    <div className="w-full max-w-4xl max-h-[92vh] overflow-y-auto">
+                      <TacticalOrderTracker
+                        initialOrder={persistedOrder}
+                        onClose={() => setShowTrackerModal(false)}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             ) : (

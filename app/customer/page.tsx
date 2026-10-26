@@ -11,8 +11,10 @@ import TacticalLoginModal from "@/components/LoginModal";
 import TacticalMenuCodex from "@/components/TacticalMenuCodex";
 import TacticalSommelier from "@/components/TacticalSommelier";
 import TacticalTicker from "@/components/TacticalTicker";
+import TacticalOrderTracker from "@/components/TacticalOrderTracker";
+import { Radio, QrCode, Copy, Check, X } from "lucide-react";
 
-import { getMe, getMenu, getOrderById, submitOrder, updateOrderStatus } from "@/lib/api";
+import { getMe, getMenu, getOrderById, submitOrder, updateOrderStatus, getPublicCategorizedMenu, trackOrderPublic } from "@/lib/api";
 import {
   matchOrderFromTranscript,
   isVoiceConfirmation,
@@ -73,16 +75,28 @@ export default function CustomerPage() {
   const [submitOrderError, setSubmitOrderError] = useState<string | null>(null);
   const [persistedOrder, setPersistedOrder] = useState<PersistedOrder | null>(null);
 
-  // Staff Call State
-  const [isCallingWaiter, setIsCallingWaiter] = useState(false);
+  // Table Pass Modal State
+  const [isTablePassOpen, setIsTablePassOpen] = useState(false);
+  const [isPassLinkCopied, setIsPassLinkCopied] = useState(false);
 
   // Unmatched voice phrase feedback state
   const [unmatchedPhrase, setUnmatchedPhrase] = useState<string | null>(null);
 
   const sessionRef = useRef<RealtimeVoiceSession | null>(null);
 
-  // 1. Check saved token on mount
+  // 1. Check saved token and active order on mount
   useEffect(() => {
+    const activeOrderId = localStorage.getItem("aivora_active_order_id");
+    if (activeOrderId) {
+      trackOrderPublic(activeOrderId)
+        .then((ord) => {
+          if (ord && ord.status !== "CANCELLED") {
+            setPersistedOrder(ord);
+          }
+        })
+        .catch(() => {});
+    }
+
     const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!savedToken) {
       setIsMenuLoading(false);
@@ -121,20 +135,30 @@ export default function CustomerPage() {
     let isCancelled = false;
 
     async function loadMenu() {
-      if (!authToken) {
-        // Multi-tenant SaaS: If signed out, clear menu immediately so no database menus leak
-        setMenu([]);
-        setIsMenuLoading(false);
-        return;
-      }
-
       try {
         setIsMenuLoading(true);
         setMenuError("");
-        const items = await getMenu(authToken);
-        if (!isCancelled) {
-          setMenu(items);
-          setMenuError("");
+
+        if (authToken) {
+          const items = await getMenu(authToken);
+          if (!isCancelled) {
+            setMenu(items);
+            setMenuError("");
+          }
+        } else {
+          // Public Guest fallback: Load active menu for primary venue
+          const publicData = await getPublicCategorizedMenu("test-venue-saas");
+          if (!isCancelled) {
+            const allItems: MenuItemType[] = [];
+            publicData.categories.forEach((cat: { items: MenuItemType[] }) => {
+              cat.items.forEach((it: MenuItemType) => {
+                if (it.active) allItems.push(it);
+              });
+            });
+            setMenu(allItems);
+            setRestaurantName(publicData.restaurant.name);
+            setMenuError("");
+          }
         }
       } catch (error) {
         console.error(error);
@@ -302,6 +326,7 @@ export default function CustomerPage() {
     try {
       const session = await startRealtimeVoiceSession({
         authToken: authToken ?? undefined,
+        restaurantSlug: !authToken ? "restaurant-a-1791609281426" : undefined,
         onAssistantSpeakingChange: setIsSpeaking,
         onDisconnected: () => {
           sessionRef.current = null;
@@ -490,6 +515,10 @@ export default function CustomerPage() {
       }
 
       setPersistedOrder(finalOrder);
+      try {
+        localStorage.setItem("aivora_active_order_id", finalOrder.id);
+      } catch (e) {}
+      setActiveView("track");
       setStatus(
         `Order #${finalOrder.id.slice(0, 8)} confirmed with the chef! Preparation is underway. Total: $${Number(finalOrder.total).toFixed(2)}`
       );
@@ -547,11 +576,15 @@ export default function CustomerPage() {
 
   const handleResetOrder = useCallback(() => {
     setPersistedOrder(null);
+    try {
+      localStorage.removeItem("aivora_active_order_id");
+    } catch (e) {}
     setOrderItems([]);
     setConversation([]);
     setSpecialInstructions("");
     setSubmitOrderError(null);
     setStatus("System ready for next order.");
+    setActiveView("dial");
   }, []);
 
   // Quick prompt handler (clicking prompts or pairings adds to transcript)
@@ -569,13 +602,13 @@ export default function CustomerPage() {
     []
   );
 
-  // Waiter Call Handler
-  const handleCallWaiter = useCallback(() => {
-    setIsCallingWaiter(true);
-    setStatus("🛎️ Private dining butler notified for Table VIP-01.");
-    setTimeout(() => {
-      setIsCallingWaiter(false);
-    }, 4500);
+  // Copy Table Session Link
+  const handleCopyTableLink = useCallback(() => {
+    if (typeof window !== "undefined") {
+      navigator.clipboard.writeText(window.location.href);
+      setIsPassLinkCopied(true);
+      setTimeout(() => setIsPassLinkCopied(false), 2000);
+    }
   }, []);
 
   // Poll live order status until completed or cancelled
@@ -643,9 +676,10 @@ export default function CustomerPage() {
           activeView={activeView}
           onSelectView={setActiveView}
           orderCount={orderItems.reduce((acc, it) => acc + it.quantity, 0)}
+          hasActiveOrder={!!persistedOrder}
+          activeOrderStatus={persistedOrder?.status}
           onCalibrate={() => setShowSplash(true)}
-          onCallWaiter={handleCallWaiter}
-          isCallingWaiter={isCallingWaiter}
+          onOpenTablePass={() => setIsTablePassOpen(true)}
         />
 
         {/* Responsive Grid: Center Voice Hub & Right Menu/Order Console */}
@@ -656,6 +690,35 @@ export default function CustomerPage() {
               {/* Voice Core Dial Hub */}
               {activeView === "dial" && (
                 <div className="w-full flex flex-col items-center">
+                  {/* Active Order Telemetry Banner */}
+                  {persistedOrder && (
+                    <div className="w-full max-w-xl mb-4 p-3.5 rounded-2xl bg-[#211F1A]/95 border border-[#B68A2D]/50 shadow-[0_0_25px_rgba(182,138,45,0.25)] flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22D3EE] opacity-75" />
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-[#06B6D4]" />
+                        </span>
+                        <div>
+                          <span className="font-mono text-[10px] text-[#E5C378] tracking-widest uppercase block font-bold">
+                            KITCHEN TELEMETRY // {persistedOrder.status}
+                          </span>
+                          <span className="text-xs font-semibold text-neutral-200">
+                            Order #{persistedOrder.id.slice(0, 8)} • {persistedOrder.status === "PREPARING" ? "Executive chef is preparing your meal" : persistedOrder.status === "READY" ? "Plated & ready for service" : persistedOrder.status === "COMPLETED" ? "Fulfilled" : "Confirmed with kitchen"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveView("track")}
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#12110D] font-mono text-[11px] font-bold hover:opacity-95 transition flex items-center gap-1.5 shadow-[0_0_12px_rgba(182,138,45,0.4)] cursor-pointer"
+                      >
+                        <Radio className="w-3.5 h-3.5 text-[#12110D]" />
+                        <span>VIEW HUD</span>
+                      </button>
+                    </div>
+                  )}
+
                   <AnimeRadarDial
                     disabled={isConnecting}
                     isConnecting={isConnecting}
@@ -736,6 +799,52 @@ export default function CustomerPage() {
                     </button>
                   </div>
                   <TacticalSommelier onAddPairing={handleQuickPrompt} />
+                </div>
+              )}
+
+              {/* Full Live Order Telemetry Tracker View */}
+              {activeView === "track" && (
+                <div className="w-full space-y-4">
+                  {persistedOrder ? (
+                    <>
+                      <div className="flex items-center justify-between pb-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveView("dial")}
+                          className="font-mono text-xs text-[#B68A2D] hover:text-[#E5C378] flex items-center gap-1.5 cursor-pointer transition"
+                        >
+                          ← Back to Voice Core
+                        </button>
+                        <span className="font-mono text-[11px] text-[#22D3EE] flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-ping" />
+                          LIVE KITCHEN TELEMETRY
+                        </span>
+                      </div>
+
+                      <TacticalOrderTracker
+                        initialOrder={persistedOrder}
+                        sessionToken={undefined}
+                        onClose={() => setActiveView("dial")}
+                        onOrderMore={() => {
+                          setActiveView("dial");
+                          setRightPanelTab("menu");
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <div className="w-full p-8 rounded-2xl bg-[#211F1A]/80 border border-[#B68A2D]/30 text-center space-y-3 font-mono">
+                      <Radio className="w-8 h-8 text-[#B68A2D]/60 mx-auto" />
+                      <p className="text-sm text-neutral-300 font-bold">NO ACTIVE DISPATCH FOUND</p>
+                      <p className="text-xs text-neutral-500">Submit an order via Voice Core or Menu Codex to track live kitchen preparation.</p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveView("dial")}
+                        className="px-4 py-2 rounded-xl bg-[#B68A2D] text-[#12110D] text-xs font-bold font-mono hover:opacity-95 transition cursor-pointer"
+                      >
+                        Return to Voice Core
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -889,6 +998,123 @@ export default function CustomerPage() {
         onClose={() => setIsLoginModalOpen(false)}
         onSuccess={handleLoginSuccess}
       />
+
+      {/* Table Digital Pass & Companion QR Modal */}
+      {isTablePassOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-2xl bg-[#161512] border border-[#B68A2D]/50 shadow-[0_0_60px_rgba(182,138,45,0.35)] p-6 font-mono text-[#F3EFE6] space-y-4">
+            <div className="corner-bracket-tl !w-4 !h-4 !border-[#B68A2D]" />
+            <div className="corner-bracket-tr !w-4 !h-4 !border-[#B68A2D]" />
+            <div className="corner-bracket-bl !w-4 !h-4 !border-[#B68A2D]" />
+            <div className="corner-bracket-br !w-4 !h-4 !border-[#B68A2D]" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#B68A2D]/30 pb-3">
+              <div className="flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-[#E5C378]" />
+                <div>
+                  <h3 className="text-sm font-bold tracking-wider text-white uppercase">
+                    DIGITAL TABLE PASS
+                  </h3>
+                  <span className="text-[10px] text-[#B68A2D] tracking-widest block">
+                    SESSION NODE // T-VIP-01
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTablePassOpen(false)}
+                className="w-8 h-8 rounded-lg bg-[#211F1A] border border-neutral-700 flex items-center justify-center text-neutral-400 hover:text-white hover:border-[#B68A2D] transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* QR Graphic and Instructions */}
+            <div className="flex flex-col items-center justify-center p-5 rounded-2xl bg-[#0E0D0B] border border-neutral-800 space-y-3">
+              <div className="p-3 rounded-xl bg-white/95 shadow-inner flex items-center justify-center">
+                <svg className="w-36 h-36 text-[#12110D]" viewBox="0 0 100 100" fill="currentColor">
+                  {/* Position detection patterns */}
+                  <rect x="5" y="5" width="30" height="30" rx="3" fill="none" stroke="currentColor" strokeWidth="6" />
+                  <rect x="13" y="13" width="14" height="14" rx="2" />
+                  <rect x="65" y="5" width="30" height="30" rx="3" fill="none" stroke="currentColor" strokeWidth="6" />
+                  <rect x="73" y="13" width="14" height="14" rx="2" />
+                  <rect x="5" y="65" width="30" height="30" rx="3" fill="none" stroke="currentColor" strokeWidth="6" />
+                  <rect x="13" y="73" width="14" height="14" rx="2" />
+                  {/* Data matrix nodes */}
+                  <rect x="42" y="8" width="6" height="6" />
+                  <rect x="52" y="14" width="6" height="6" />
+                  <rect x="42" y="24" width="6" height="6" />
+                  <rect x="10" y="44" width="6" height="6" />
+                  <rect x="22" y="44" width="6" height="6" />
+                  <rect x="34" y="44" width="6" height="6" />
+                  <rect x="46" y="44" width="8" height="8" />
+                  <rect x="60" y="44" width="6" height="6" />
+                  <rect x="74" y="44" width="6" height="6" />
+                  <rect x="86" y="44" width="6" height="6" />
+                  <rect x="42" y="60" width="6" height="6" />
+                  <rect x="54" y="66" width="6" height="6" />
+                  <rect x="68" y="60" width="6" height="6" />
+                  <rect x="80" y="68" width="6" height="6" />
+                  <rect x="42" y="78" width="6" height="6" />
+                  <rect x="58" y="82" width="6" height="6" />
+                  <rect x="72" y="80" width="6" height="6" />
+                  <rect x="84" y="84" width="6" height="6" />
+                </svg>
+              </div>
+
+              <div className="text-center space-y-1">
+                <span className="text-xs font-bold text-white tracking-wide block">
+                  Scan to Join Table Session
+                </span>
+                <p className="text-[10px] text-neutral-400 max-w-xs">
+                  Companions can scan to co-order dishes, browse the wine cellar, and view order telemetry.
+                </p>
+              </div>
+            </div>
+
+            {/* Table Metadata */}
+            <div className="grid grid-cols-2 gap-2 text-[11px] p-3 rounded-xl bg-[#211F1A] border border-[#B68A2D]/20">
+              <div>
+                <span className="text-[9px] text-[#B68A2D]/70 uppercase block">LOCATION</span>
+                <span className="font-bold text-white">Table VIP-01 (Main Salon)</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-[#B68A2D]/70 uppercase block">STATUS</span>
+                <span className="font-bold text-emerald-400">ACTIVE SESSION</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleCopyTableLink}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#B68A2D] to-[#E5C378] text-[#12110D] font-mono text-xs font-bold hover:opacity-95 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-[0_0_15px_rgba(182,138,45,0.3)]"
+              >
+                {isPassLinkCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-900" />
+                    <span>LINK COPIED!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>COPY TABLE LINK</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsTablePassOpen(false)}
+                className="py-2.5 px-4 rounded-xl bg-[#211F1A] border border-neutral-700 text-neutral-300 font-mono text-xs hover:border-[#B68A2D] hover:text-white transition cursor-pointer"
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
