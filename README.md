@@ -1,6 +1,7 @@
 <div align="center">
 
-# 🍽️ AIVORA Frontend *Backend is private, happy to show to employers in request*
+# 🍽️ AIVORA Frontend 
+*Backend is private, happy to show to employers in request*
 
 ### AI-Powered Voice Restaurant Ordering Interface
 
